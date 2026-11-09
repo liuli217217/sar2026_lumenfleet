@@ -24,6 +24,7 @@ from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -72,7 +73,7 @@ def generate_launch_description():
             'approx_sync': True,
             'approx_sync_max_interval': 0.1,
             'database_path': LaunchConfiguration('database_path'),
-            'Mem/IncrementalMemory': LaunchConfiguration('mem_incremental'),
+            'Mem/IncrementalMemory': ParameterValue(LaunchConfiguration('mem_incremental'), value_type=str),
         }],
         remappings=[
             ('rgb/image', LaunchConfiguration('rgb_output')),
