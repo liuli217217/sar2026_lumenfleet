@@ -107,8 +107,14 @@ class CollisionDebounce(Node):
             return
         age = (self.get_clock().now() - self.last_cmd_time).nanoseconds / 1e9
         if age > self.input_timeout:
+            if self.current_severity != MOST_RESTRICTIVE or self.candidate_severity is not None:
+                self.get_logger().warn(
+                    f'collision_debounce: no cmd_vel from collision_monitor for {age:.2f}s '
+                    f'(timeout {self.input_timeout}s) -- forcing stop')
             self.held_twist = Twist()
             self.current_severity = MOST_RESTRICTIVE
+            self.candidate_severity = None
+            self.candidate_since = None
             self.pub.publish(self.held_twist)
 
 
