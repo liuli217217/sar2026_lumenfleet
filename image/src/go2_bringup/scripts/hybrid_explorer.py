@@ -79,6 +79,18 @@ class HybridExplorer(Node):
             'candidate_headings_deg', [-90.0, -60.0, -30.0, 0.0, 30.0, 60.0, 90.0]).value
         self.unknown_check_radius = self.declare_parameter('unknown_check_radius', 2.0).value
         self.control_period = self.declare_parameter('control_period_s', 0.2).value
+        # _obstacle_ahead() checks the robot's current physical heading, not
+        # the heading of whatever goal is in flight. A freshly-sent AVOID
+        # goal picks a new heading but NavigateToPose takes time to actually
+        # turn there -- on the very next tick the robot is still facing
+        # close to the direction that triggered the check, so it re-fires,
+        # cancelling the goal before the robot has had any real chance to
+        # turn. Confirmed live (2026-11-09): goals sent and cancelled every
+        # ~200ms for 20+ seconds with almost no net progress. This window
+        # only withholds hybrid_explorer's own re-evaluation; collision_monitor
+        # and MPPI keep reacting at full rate throughout regardless.
+        self.min_commit_sec = self.declare_parameter('min_commit_sec', 1.5).value
+        self.last_goal_sent_time = None
 
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
@@ -213,6 +225,7 @@ class HybridExplorer(Node):
         self.goal_token += 1
         token = self.goal_token
         self.goal_in_flight = True
+        self.last_goal_sent_time = self.get_clock().now()
         self.get_logger().info(f'[{label}] sending goal ({x:.2f}, {y:.2f}, yaw={math.degrees(yaw):.0f} deg)')
 
         send_future = self.nav_client.send_goal_async(goal)
@@ -257,7 +270,12 @@ class HybridExplorer(Node):
                 throttle_duration_sec=3.0)
             return
 
-        if self._obstacle_ahead():
+        committing = (
+            self.goal_in_flight and self.last_goal_sent_time is not None and
+            (self.get_clock().now() - self.last_goal_sent_time).nanoseconds / 1e9 < self.min_commit_sec
+        )
+
+        if self._obstacle_ahead() and not committing:
             if self.goal_in_flight:
                 self.get_logger().info('Obstacle ahead -- cancelling current goal')
                 self._cancel_current_goal()
