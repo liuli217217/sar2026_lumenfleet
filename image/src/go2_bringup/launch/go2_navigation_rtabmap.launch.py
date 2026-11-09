@@ -226,12 +226,20 @@ def generate_launch_description():
             description='Final Twist topic; use /lumen/nav_test/cmd_vel for stationary load tests'
         ),
 
-        DeclareLaunchArgument('bridge_max_vx', default_value='0.40',
-                              description='Bridge forward/backward speed cap in m/s'),
+        DeclareLaunchArgument('bridge_max_vx', default_value='0.8',
+                              description='Bridge forward/backward speed cap in m/s -- chosen '
+                                          'so SlowZone\'s 50% cut (0.4 m/s) lands on the '
+                                          'confirmed-smooth forward threshold measured via '
+                                          'velocity_pulse.py (2026-11-09); 0.3 m/s is the '
+                                          'bare minimum the Go2 will move at, 0.4 is smooth'),
         DeclareLaunchArgument('bridge_max_vy', default_value='0.25',
-                              description='Bridge lateral speed cap in m/s'),
-        DeclareLaunchArgument('bridge_max_wz', default_value='0.80',
-                              description='Bridge yaw speed cap in rad/s'),
+                              description='Bridge lateral speed cap in m/s -- not characterized, '
+                                          'left at its prior value'),
+        DeclareLaunchArgument('bridge_max_wz', default_value='1.8',
+                              description='Bridge yaw speed cap in rad/s -- chosen so SlowZone\'s '
+                                          '50% cut (0.9 rad/s) lands on a confirmed-smooth '
+                                          'rotation value measured via velocity_pulse.py '
+                                          '(2026-11-09); 0.6 rad/s is the bare minimum, 0.5 is jerky'),
         DeclareLaunchArgument('release_dwell_sec', default_value='0.5',
                               description='Minimum time a less-restrictive collision_monitor '
                                           'state must hold before collision_debounce releases '
