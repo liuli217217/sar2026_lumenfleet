@@ -18,6 +18,7 @@ install(PROGRAMS
   scripts/waypoint_nav.py
   scripts/aruco_waypoint_demo.py
   scripts/hybrid_explorer.py
+  scripts/collision_debounce.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

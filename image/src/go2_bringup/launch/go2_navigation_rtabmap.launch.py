@@ -121,7 +121,8 @@ def generate_launch_description():
         executable='behavior_server',
         name='behavior_server',
         output='screen',
-        parameters=[nav2_params_file]
+        parameters=[nav2_params_file],
+        remappings=[('cmd_vel', 'cmd_vel_nav')]
     )
 
     bt_navigator = Node(
@@ -149,7 +150,30 @@ def generate_launch_description():
         executable='collision_monitor',
         name='collision_monitor',
         output='screen',
-        parameters=[nav2_params_file]
+        parameters=[nav2_params_file, {
+            'cmd_vel_in_topic': 'cmd_vel_smoothed',
+            'cmd_vel_out_topic': 'cmd_vel_raw',
+        }]
+    )
+
+    # ── Release-hysteresis layer ─────────────────────────────────────────────
+    # collision_monitor has no release hysteresis of its own (confirmed
+    # against the installed node's parameter list) -- when distance to a real
+    # obstacle hovers right at a polygon edge, its decision flips every scan
+    # cycle. This holds the more restrictive command until the less
+    # restrictive state has been sustained for release_dwell_sec; escalation
+    # (to a MORE restrictive state) is never delayed. See collision_debounce.py.
+    collision_debounce = Node(
+        package='go2_bringup',
+        executable='collision_debounce.py',
+        name='collision_debounce',
+        output='screen',
+        parameters=[{
+            'cmd_vel_in_topic': 'cmd_vel_raw',
+            'cmd_vel_out_topic': LaunchConfiguration('cmd_vel_output'),
+            'state_topic': 'collision_monitor_state',
+            'release_dwell_sec': ParameterValue(LaunchConfiguration('release_dwell_sec'), value_type=float),
+        }]
     )
 
     lifecycle_manager_nav = Node(
@@ -166,13 +190,16 @@ def generate_launch_description():
         executable='go2_cmd_vel_bridge',
         name='go2_cmd_vel_bridge',
         output='screen',
+        # The native bridge does not implement its enabled parameter.
+        # Exclude the process itself unless motion is explicitly requested.
+        condition=IfCondition(enable_motion),
         parameters=[{
             'enabled': ParameterValue(enable_motion, value_type=bool),
-            'cmd_vel_topic': '/cmd_vel',
+            'cmd_vel_topic': LaunchConfiguration('cmd_vel_output'),
             'request_topic': '/api/sport/request',
-            'max_vx': 0.40,
-            'max_vy': 0.25,
-            'max_wz': 0.80,
+            'max_vx': ParameterValue(LaunchConfiguration('bridge_max_vx'), value_type=float),
+            'max_vy': ParameterValue(LaunchConfiguration('bridge_max_vy'), value_type=float),
+            'max_wz': ParameterValue(LaunchConfiguration('bridge_max_wz'), value_type=float),
             'cmd_timeout_s': 0.25,
         }]
     )
@@ -186,13 +213,30 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'enable_motion',
             default_value='false',
-            description='Let the bridge command the robot. false = Nav2 plans but nothing moves'
+            description='Start the sport-command bridge only when true; other running controllers are independent'
         ),
         DeclareLaunchArgument(
             'use_rviz',
             default_value='false',
             description='Launch a second RViz for Nav2 -- leave false if one is already running'
         ),
+
+        DeclareLaunchArgument(
+            'cmd_vel_output', default_value='/cmd_vel',
+            description='Final Twist topic; use /lumen/nav_test/cmd_vel for stationary load tests'
+        ),
+
+        DeclareLaunchArgument('bridge_max_vx', default_value='0.40',
+                              description='Bridge forward/backward speed cap in m/s'),
+        DeclareLaunchArgument('bridge_max_vy', default_value='0.25',
+                              description='Bridge lateral speed cap in m/s'),
+        DeclareLaunchArgument('bridge_max_wz', default_value='0.80',
+                              description='Bridge yaw speed cap in rad/s'),
+        DeclareLaunchArgument('release_dwell_sec', default_value='0.5',
+                              description='Minimum time a less-restrictive collision_monitor '
+                                          'state must hold before collision_debounce releases '
+                                          'to it; escalation to a more restrictive state is '
+                                          'never delayed regardless of this value'),
 
         body_filter,
         utlidar_to_laserscan,
@@ -204,6 +248,7 @@ def generate_launch_description():
         bt_navigator,
         velocity_smoother,
         collision_monitor,
+        collision_debounce,
         lifecycle_manager_nav,
         go2_cmd_vel_bridge,
     ])
