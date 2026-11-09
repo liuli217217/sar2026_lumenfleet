@@ -77,6 +77,7 @@ def generate_launch_description():
             'approx_sync': True,
             'approx_sync_max_interval': 0.1,
             'database_path': LaunchConfiguration('database_path'),
+            'Mem/IncrementalMemory': LaunchConfiguration('mem_incremental'),
         }],
         remappings=[
             ('rgb/image', LaunchConfiguration('rgb_input')),
@@ -94,6 +95,8 @@ def generate_launch_description():
         DeclareLaunchArgument('database_path', default_value=[
             '/mnt/sdcard/rtab_map_data/rtabmap_', Command(['date', '-u', '+%Y%m%dT%H%M%SZ']), '.db',
         ]),
+        DeclareLaunchArgument('mem_incremental', default_value='true',
+                              description="'false' localizes in an existing database without modifying it."),
 
         OpaqueFunction(function=camera_tf),
         retime_utlidar,
