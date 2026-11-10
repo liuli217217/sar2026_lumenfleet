@@ -67,10 +67,19 @@ controller_server:
       vx_std: 0.15
       vy_std: 0.15
       wz_std: 0.3
-      vx_max: 0.40
-      vx_min: -0.15
+      # Raised 2026-11-10: these are MPPI's own velocity ceilings, separate
+      # from go2_cmd_vel_bridge's max_vx/vy/wz (and lower than them, so MPPI
+      # was the actual binding constraint the whole time). Sized so the
+      # commanded speed still clears the robot's confirmed-smooth threshold
+      # even after SlowZone's 50% cut -- measured live via velocity_pulse.py
+      # and keyboard teleop: forward 0.3 min/0.4 smooth, reverse ~0.4 min/0.5
+      # smooth, rotation 0.6 min/0.9+ smooth. Old vx_max=0.40 -> 0.20 after
+      # SlowZone, below even the bare forward minimum; old wz_max=0.90 -> 0.45
+      # after SlowZone, below the rotation minimum too.
+      vx_max: 0.8
+      vx_min: -1.0
       vy_max: 0.25
-      wz_max: 0.90
+      wz_max: 1.8
       min_x_velocity_threshold: 0.05
       min_y_velocity_threshold: 0.05
       min_theta_velocity_threshold: 0.1
