@@ -121,6 +121,22 @@ class HybridExplorer(Node):
         self.stuck_progress_dist = self.declare_parameter('stuck_progress_dist', 0.08).value
         self.progress_anchor = None  # (x, y, ros_time) at last confirmed movement
 
+        # Confirmed live (2026-11-10): the progress watchdog above correctly
+        # detects and recovers from a genuine dead end (e.g. a corner), but
+        # _best_avoid_heading() has no memory -- it re-scores candidates
+        # fresh every time based on current unknown-space in /map, so a
+        # dead end that still looks attractive (unexplored) keeps getting
+        # picked again right after backing away from it, producing a stable
+        # approach/backup loop instead of genuinely exploring elsewhere.
+        # Whenever the watchdog confirms a target is unreachable, blacklist
+        # it for failed_blacklist_sec within failed_blacklist_radius, and
+        # exclude any candidate heading (AVOID or DRIVE) that would send
+        # the robot back near it.
+        self.failed_blacklist_radius = self.declare_parameter('failed_blacklist_radius', 0.6).value
+        self.failed_blacklist_sec = self.declare_parameter('failed_blacklist_sec', 60.0).value
+        self.failed_targets = []  # [(x, y, ros_time), ...]
+        self.current_goal_xy = None  # (x, y) of whatever goal is currently in flight
+
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
@@ -215,6 +231,29 @@ class HybridExplorer(Node):
                 break
         return score
 
+    def _prune_blacklist(self, now):
+        self.failed_targets = [
+            (x, y, t) for (x, y, t) in self.failed_targets
+            if (now - t).nanoseconds / 1e9 < self.failed_blacklist_sec
+        ]
+
+    def _is_blacklisted(self, x, y):
+        now = self.get_clock().now()
+        self._prune_blacklist(now)
+        return any(
+            math.hypot(x - bx, y - by) < self.failed_blacklist_radius
+            for bx, by, _ in self.failed_targets
+        )
+
+    def _blacklist_current_goal(self):
+        if self.current_goal_xy is None:
+            return
+        bx, by = self.current_goal_xy
+        self.failed_targets.append((bx, by, self.get_clock().now()))
+        self.get_logger().warn(
+            f'Blacklisting unreachable target ({bx:.2f}, {by:.2f}) for '
+            f'{self.failed_blacklist_sec:.0f}s')
+
     def _best_avoid_heading(self):
         """Pick the candidate heading with the most unknown space, excluding
         any heading that is itself immediately blocked in the local costmap."""
@@ -230,6 +269,10 @@ class HybridExplorer(Node):
         for deg in self.candidate_headings_deg:
             offset = math.radians(deg)
             if self._heading_blocked(self.local_costmap, lx, ly, lyaw, offset):
+                continue
+            gx = mx + self.avoid_step * math.cos(myaw + offset)
+            gy = my + self.avoid_step * math.sin(myaw + offset)
+            if self._is_blacklisted(gx, gy):
                 continue
             score = self._score_heading(mx, my, myaw, offset)
             if best_score is None or score > best_score:
@@ -255,6 +298,7 @@ class HybridExplorer(Node):
         token = self.goal_token
         self.goal_in_flight = True
         self.last_goal_sent_time = self.get_clock().now()
+        self.current_goal_xy = (x, y)
         self.get_logger().info(f'[{label}] sending goal ({x:.2f}, {y:.2f}, yaw={math.degrees(yaw):.0f} deg)')
 
         send_future = self.nav_client.send_goal_async(goal)
@@ -313,6 +357,7 @@ class HybridExplorer(Node):
         self.get_logger().warn(
             f'No real movement in {self.stuck_progress_sec:.1f}s despite an active goal -- '
             'forcing a backup retreat')
+        self._blacklist_current_goal()
         if self.goal_in_flight:
             self._cancel_current_goal()
         gx = mx - self.backup_step * math.cos(myaw)
@@ -341,7 +386,20 @@ class HybridExplorer(Node):
             (self.get_clock().now() - self.last_goal_sent_time).nanoseconds / 1e9 < self.min_commit_sec
         )
 
-        if self._obstacle_ahead() and not committing:
+        # Straight ahead leads back into a confirmed dead end -> treat the
+        # same as an obstacle, so this routes into _best_avoid_heading()'s
+        # candidate search (which also respects the blacklist) instead of
+        # just idling until _obstacle_ahead() happens to notice something.
+        need_avoid = self._obstacle_ahead()
+        if not need_avoid and not self.goal_in_flight:
+            pose = self._pose_in('map')
+            if pose is not None:
+                mx0, my0, myaw0 = pose
+                gx0 = mx0 + self.forward_step * math.cos(myaw0)
+                gy0 = my0 + self.forward_step * math.sin(myaw0)
+                need_avoid = self._is_blacklisted(gx0, gy0)
+
+        if need_avoid and not committing:
             if self.goal_in_flight:
                 self.get_logger().info('Obstacle ahead -- cancelling current goal')
                 self._cancel_current_goal()
