@@ -105,6 +105,22 @@ class HybridExplorer(Node):
         self.backup_step = self.declare_parameter('backup_step', 0.4).value
         self.no_heading_since = None
 
+        # Independent of the no-clear-heading case above: confirmed live
+        # (2026-11-10), with consider_footprint enabled on MPPI, that
+        # _heading_blocked()'s simple box-sample check can call a heading
+        # "clear" while MPPI's more accurate, orientation-aware CostCritic
+        # disagrees and refuses to execute any trajectory that way -- MPPI
+        # converges on an effectively-zero-velocity "optimal" trajectory
+        # every cycle rather than failing loudly, so neither this node's own
+        # obstacle check nor Nav2's own progress-checker recovery (whose
+        # timer keeps getting reset by each fresh goal send) ever catches
+        # it. This tracks real position over time regardless of what the
+        # goal-sending logic currently believes, and forces the same BACKUP
+        # retreat if the robot hasn't actually moved in stuck_progress_sec.
+        self.stuck_progress_sec = self.declare_parameter('stuck_progress_sec', 3.0).value
+        self.stuck_progress_dist = self.declare_parameter('stuck_progress_dist', 0.08).value
+        self.progress_anchor = None  # (x, y, ros_time) at last confirmed movement
+
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
@@ -271,6 +287,40 @@ class HybridExplorer(Node):
             self.goal_handle.cancel_goal_async()
             self.goal_handle = None
 
+    def _progress_watchdog_backup(self):
+        """True if a BACKUP was just sent because the robot hasn't actually
+        moved in stuck_progress_sec, regardless of what the goal-sending
+        logic currently believes about available headings. Runs every tick,
+        independent of _obstacle_ahead()/_best_avoid_heading()."""
+        pose = self._pose_in('map')
+        if pose is None:
+            return False
+        mx, my, myaw = pose
+        now = self.get_clock().now()
+
+        if self.progress_anchor is None:
+            self.progress_anchor = (mx, my, now)
+            return False
+
+        ax, ay, at = self.progress_anchor
+        if math.hypot(mx - ax, my - ay) >= self.stuck_progress_dist:
+            self.progress_anchor = (mx, my, now)
+            return False
+
+        if (now - at).nanoseconds / 1e9 < self.stuck_progress_sec:
+            return False
+
+        self.get_logger().warn(
+            f'No real movement in {self.stuck_progress_sec:.1f}s despite an active goal -- '
+            'forcing a backup retreat')
+        if self.goal_in_flight:
+            self._cancel_current_goal()
+        gx = mx - self.backup_step * math.cos(myaw)
+        gy = my - self.backup_step * math.sin(myaw)
+        self._send_goal(gx, gy, myaw, 'BACKUP')
+        self.progress_anchor = (mx, my, now)
+        return True
+
     def _tick(self):
         if self.local_costmap is None or self.global_map is None:
             missing = []
@@ -281,6 +331,9 @@ class HybridExplorer(Node):
             self.get_logger().warn(
                 f'Waiting for data on: {", ".join(missing)} -- no goals can be sent yet.',
                 throttle_duration_sec=3.0)
+            return
+
+        if self._progress_watchdog_backup():
             return
 
         committing = (
