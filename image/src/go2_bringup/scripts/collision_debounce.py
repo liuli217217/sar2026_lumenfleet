@@ -22,6 +22,21 @@ severity has been continuously reported by collision_monitor_state for
 more restrictive severity is repeated instead of forwarding the fluctuating
 one. A stop (or any new restriction) is therefore never delayed -- only its
 release is.
+
+Also applies deadband_linear/deadband_angular to every outgoing Twist
+(2026-11-10). MPPI can choose a small-but-nonzero "optimal" trajectory
+(e.g. 0.15, then 0.075 after SlowZone's cut) that sits below the robot's
+real measured minimum executable speed (forward ~0.3-0.4, reverse
+~0.4-0.5, rotation ~0.6) and produces zero actual movement while looking
+like a valid command. The obvious place to filter this is
+go2_cmd_vel_bridge, but the Docker image's build of that node (confirmed
+by diffing it against the native workspace's copy, which does have a
+deadband) is a different, divergent implementation with no deadband
+capability at all, and fixing that requires a C++ rebuild rather than a
+hot patch. This is a safe, equivalent place to enforce it instead: it
+runs before the bridge in the pipeline, zeroes won't ever get held as a
+"real" severity-change command, and the stop-while-stale watchdog path
+already publishes a pure zero Twist either way.
 """
 
 import rclpy
@@ -49,6 +64,8 @@ class CollisionDebounce(Node):
         in_topic = self.declare_parameter('cmd_vel_in_topic', 'cmd_vel').value
         out_topic = self.declare_parameter('cmd_vel_out_topic', 'cmd_vel_debounced').value
         state_topic = self.declare_parameter('state_topic', 'collision_monitor_state').value
+        self.deadband_linear = self.declare_parameter('deadband_linear', 0.4).value
+        self.deadband_angular = self.declare_parameter('deadband_angular', 0.6).value
 
         self.current_severity = 0
         self.held_twist = Twist()
@@ -73,7 +90,18 @@ class CollisionDebounce(Node):
         # Unknown/unconfigured action types fail safe to most restrictive.
         self.last_state_severity = SEVERITY.get(msg.action_type, MOST_RESTRICTIVE)
 
+    def _apply_deadband(self, msg):
+        out = Twist()
+        out.linear.x = msg.linear.x if abs(msg.linear.x) >= self.deadband_linear else 0.0
+        out.linear.y = msg.linear.y if abs(msg.linear.y) >= self.deadband_linear else 0.0
+        out.linear.z = msg.linear.z
+        out.angular.x = msg.angular.x
+        out.angular.y = msg.angular.y
+        out.angular.z = msg.angular.z if abs(msg.angular.z) >= self.deadband_angular else 0.0
+        return out
+
     def on_cmd_vel(self, msg):
+        msg = self._apply_deadband(msg)
         now = self.get_clock().now()
         self.last_cmd_time = now
         incoming = self.last_state_severity
