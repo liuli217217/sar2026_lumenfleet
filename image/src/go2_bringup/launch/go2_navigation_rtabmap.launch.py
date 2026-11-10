@@ -205,6 +205,28 @@ def generate_launch_description():
             'max_vx': ParameterValue(LaunchConfiguration('bridge_max_vx'), value_type=float),
             'max_vy': ParameterValue(LaunchConfiguration('bridge_max_vy'), value_type=float),
             'max_wz': ParameterValue(LaunchConfiguration('bridge_max_wz'), value_type=float),
+            # Raised 2026-11-10 from the bridge's own default (0.02, far too
+            # small): go2_cmd_vel_bridge.cpp zeroes any |vx|/|wz| below this
+            # before sending the Move request -- confirmed live via
+            # /cmd_vel_raw that MPPI can choose a small-but-nonzero
+            # "optimal" trajectory (e.g. -0.075, -0.15) near an obstacle
+            # that's mechanically below the robot's real minimum executable
+            # speed (forward ~0.3-0.4, reverse ~0.4-0.5, rotation ~0.6) and
+            # produces zero actual movement while looking like a valid
+            # command. This is the one place in the whole pipeline that
+            # actually reads a deadband parameter (an earlier attempt to
+            # set MPPI's own min_x/theta_velocity_threshold was a dead end
+            # -- those belong to controller_server's odometry-based
+            # isGoalReached() check, not MPPI's output, confirmed against
+            # Nav2's own source). deadband_linear is shared between vx and
+            # vy in the bridge's source (no separate per-axis deadband).
+            # Side effect, not yet resolved: this deadband (0.4) exceeds
+            # vy_max (0.25), so no lateral command can ever clear it --
+            # strafe motion is effectively disabled until vy_max is raised
+            # too, which hasn't been done since lateral speed was never
+            # characterized this session.
+            'deadband_linear': 0.4,
+            'deadband_angular': 0.6,
             'cmd_timeout_s': 0.25,
         }]
     )
