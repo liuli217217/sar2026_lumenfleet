@@ -254,6 +254,29 @@ class HybridExplorer(Node):
             f'Blacklisting unreachable target ({bx:.2f}, {by:.2f}) for '
             f'{self.failed_blacklist_sec:.0f}s')
 
+    def _backup_target(self, mx, my, myaw):
+        """Pick a retreat point behind the robot, skipping any that are
+        themselves blacklisted. Both BACKUP call sites used to compute this
+        purely from the current pose with no blacklist check -- since the
+        pose doesn't change while the robot is stuck, that formula produced
+        the exact same point every time, so the watchdog would blacklist a
+        target and then immediately resend a goal to that same blacklisted
+        point, forever. Confirmed live (2026-11-10): "Blacklisting
+        unreachable target (1.75, -0.01)" followed by "[BACKUP] sending
+        goal (1.75, -0.01, ...)" repeating for 90+ seconds straight."""
+        for deg in (0.0, 30.0, -30.0, 60.0, -60.0):
+            heading = myaw + math.pi + math.radians(deg)
+            gx = mx + self.backup_step * math.cos(heading)
+            gy = my + self.backup_step * math.sin(heading)
+            if not self._is_blacklisted(gx, gy):
+                return gx, gy
+        # Every nearby retreat point is already blacklisted -- step further
+        # back along the straight-behind heading instead of looping.
+        heading = myaw + math.pi
+        gx = mx + (self.backup_step * 2.0) * math.cos(heading)
+        gy = my + (self.backup_step * 2.0) * math.sin(heading)
+        return gx, gy
+
     def _best_avoid_heading(self):
         """Pick the candidate heading with the most unknown space, excluding
         any heading that is itself immediately blocked in the local costmap."""
@@ -360,8 +383,7 @@ class HybridExplorer(Node):
         self._blacklist_current_goal()
         if self.goal_in_flight:
             self._cancel_current_goal()
-        gx = mx - self.backup_step * math.cos(myaw)
-        gy = my - self.backup_step * math.sin(myaw)
+        gx, gy = self._backup_target(mx, my, myaw)
         self._send_goal(gx, gy, myaw, 'BACKUP')
         self.progress_anchor = (mx, my, now)
         return True
@@ -414,8 +436,7 @@ class HybridExplorer(Node):
                     pose = self._pose_in('map')
                     if pose is not None:
                         mx, my, myaw = pose
-                        gx = mx - self.backup_step * math.cos(myaw)
-                        gy = my - self.backup_step * math.sin(myaw)
+                        gx, gy = self._backup_target(mx, my, myaw)
                         self._send_goal(gx, gy, myaw, 'BACKUP')
                         self.no_heading_since = None
                         return
