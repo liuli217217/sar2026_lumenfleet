@@ -185,12 +185,19 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        # Lowered from 0.40 (2026-11-09): robot_radius 0.4 + inflation_radius
-        # 0.4 required 1.6m of clearance on each side just to be plannable,
-        # far too conservative for the narrow spaces/small rooms this robot
-        # actually needs to navigate in competition. 0.15 brings the total
-        # lethal+inflated boundary to 0.55m from an obstacle surface.
-        inflation_radius: 0.15
+        # 0.15 (2026-11-09) kept the lethal+inflated boundary narrow enough
+        # for small rooms/narrow passages, but after switching robot_radius
+        # to a real rectangular footprint, 0.15 is below the footprint's own
+        # inscribed radius (~0.165m, the largest circle fitting entirely
+        # inside it) -- Nav2 itself warns this leaves a thin margin right at
+        # the robot's narrow sides where the cost gradient hasn't fully
+        # ramped to lethal. 0.20 clears that with real margin while staying
+        # well short of the circumscribed radius (~0.40m) that would fully
+        # restore MPPI's fast circular-prefilter optimization -- accepting
+        # the extra per-cycle CPU cost of full-footprint checking in trade
+        # for keeping narrow-passage navigation, confirmed as a real need
+        # tonight (2026-11-10).
+        inflation_radius: 0.20
 
 global_costmap:
   global_costmap:
@@ -240,12 +247,19 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        # Lowered from 0.40 (2026-11-09): robot_radius 0.4 + inflation_radius
-        # 0.4 required 1.6m of clearance on each side just to be plannable,
-        # far too conservative for the narrow spaces/small rooms this robot
-        # actually needs to navigate in competition. 0.15 brings the total
-        # lethal+inflated boundary to 0.55m from an obstacle surface.
-        inflation_radius: 0.15
+        # 0.15 (2026-11-09) kept the lethal+inflated boundary narrow enough
+        # for small rooms/narrow passages, but after switching robot_radius
+        # to a real rectangular footprint, 0.15 is below the footprint's own
+        # inscribed radius (~0.165m, the largest circle fitting entirely
+        # inside it) -- Nav2 itself warns this leaves a thin margin right at
+        # the robot's narrow sides where the cost gradient hasn't fully
+        # ramped to lethal. 0.20 clears that with real margin while staying
+        # well short of the circumscribed radius (~0.40m) that would fully
+        # restore MPPI's fast circular-prefilter optimization -- accepting
+        # the extra per-cycle CPU cost of full-footprint checking in trade
+        # for keeping narrow-passage navigation, confirmed as a real need
+        # tonight (2026-11-10).
+        inflation_radius: 0.20
 
 planner_server:
   ros__parameters:
@@ -327,16 +341,16 @@ collision_monitor:
     polygons: ["StopZone", "SlowZone"]
     StopZone:
       type: polygon
-      # Sized against inflation_radius 0.15 (2026-11-09, see inflation_layer
-      # above): robot_radius 0.4 + inflation_radius 0.15 = 0.55m
-      # lethal/inflated extent from an obstacle surface. This clears that
-      # boundary with a small margin, so the robot never stands somewhere
+      # Originally sized (2026-11-09) against the old robot_radius: 0.4
+      # circle + inflation_radius, so the robot never stands somewhere
       # StopZone permits but the costmap's own inflation makes unplannable
       # (the deadlock that caused "Failed to create plan" on every retry,
-      # even after a full costmap clear) -- while staying close to the
-      # original ±0.55/±0.30 size so the zone still fits inside small rooms,
-      # unlike the earlier ±0.85/±0.50 attempt (paired with inflation_radius
-      # 0.4) which didn't.
+      # even after a full costmap clear), while staying close to the
+      # original ±0.55/±0.30 size so the zone still fits inside small rooms.
+      # robot_radius was since replaced with a real rectangular footprint
+      # (2026-11-10, see inflation_layer above) -- left unchanged here since
+      # it's already close to the real body size and changing it alongside
+      # the footprint switch would make it unclear which change helped.
       # Flat double_array: x1,y1, x2,y2, x3,y3, x4,y4
       points: "[[-0.60, -0.35], [-0.60, 0.35], [0.60, 0.35], [0.60, -0.35]]"
       action_type: stop
