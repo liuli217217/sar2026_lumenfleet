@@ -115,7 +115,11 @@ controller_server:
         cost_power: 1
         cost_weight: 3.81
         critical_cost: 300.0
-        consider_footprint: false
+        # Enabled 2026-11-10, paired with the real rectangular footprint
+        # replacing robot_radius in both costmaps -- lets MPPI score
+        # trajectories against the robot's actual oriented shape instead of
+        # a worst-case circle.
+        consider_footprint: true
         collision_cost: 1000000.0
         near_goal_smoothing_distance: 0.5 #1.5
       PathAlignCritic:
@@ -152,8 +156,14 @@ local_costmap:
       width: 6
       height: 6
       resolution: 0.05
-      # Circumradius of 0.70m x 0.35m body ≈ 0.39m, padded to 0.40m
-      robot_radius: 0.4
+      # Real rectangular body (2026-11-10), replacing the robot_radius: 0.4
+      # circle -- that treated every direction as if the robot were as wide
+      # as its 0.70m length, including its actual narrow 0.31m width,
+      # blocking passages the real body could fit through at the right
+      # orientation. Paired with CostCritic.consider_footprint: true below
+      # so MPPI actually reasons about heading near obstacles, not just a
+      # worst-case circle.
+      footprint: "[[-0.35, -0.155], [-0.35, 0.155], [0.35, 0.155], [0.35, -0.155]]"
       update_frequency: 5.0
       publish_frequency: 2.0
       transform_tolerance: 0.3
@@ -188,7 +198,8 @@ global_costmap:
       use_sim_time: false
       robot_base_frame: base_link
       global_frame: map
-      robot_radius: 0.4
+      # Real rectangular body, see local_costmap's footprint comment above.
+      footprint: "[[-0.35, -0.155], [-0.35, 0.155], [0.35, 0.155], [0.35, -0.155]]"
       resolution: 0.05
       track_unknown_space: true
       update_frequency: 1.0
