@@ -80,9 +80,21 @@ controller_server:
       vx_min: -1.0
       vy_max: 0.25
       wz_max: 1.8
-      min_x_velocity_threshold: 0.05
+      # Raised 2026-11-10: these zero out any MPPI output below the
+      # threshold, but at 0.05/0.05/0.1 they were far below the robot's
+      # actual measured minimum executable speeds (forward ~0.3-0.4,
+      # reverse ~0.4-0.5, rotation ~0.6). Confirmed live via
+      # /cmd_vel_raw: MPPI was choosing e.g. linear.x=-0.15 as its
+      # "optimal" trajectory near an obstacle -- a real, nonzero command
+      # that still produced zero actual robot movement, since it never
+      # reached the mechanical floor. Forces an all-or-nothing choice:
+      # either a speed that will really move the robot, or true zero,
+      # never a dead-zone value that looks like a command but isn't one.
+      # min_y left unchanged -- lateral/strafe speed was never
+      # characterized this session, no data to size it against.
+      min_x_velocity_threshold: 0.4
       min_y_velocity_threshold: 0.05
-      min_theta_velocity_threshold: 0.1
+      min_theta_velocity_threshold: 0.6
       iteration_count: 1
       prune_distance: 1.7
       transform_tolerance: 0.1
