@@ -92,6 +92,19 @@ class HybridExplorer(Node):
         self.min_commit_sec = self.declare_parameter('min_commit_sec', 1.5).value
         self.last_goal_sent_time = None
 
+        # _best_avoid_heading() returning None (every candidate heading
+        # blocked in the local costmap) previously had no fallback at all --
+        # confirmed live (2026-11-10): the robot sat with zero goal in
+        # flight, logging "no clear candidate heading" every 2s, for 36+
+        # seconds straight with no recovery attempt of any kind. backup_step
+        # sends a short retreat goal (same frame/orientation, so the
+        # controller is free to walk it in reverse rather than turning
+        # around) after the dead end has persisted for stuck_backup_sec,
+        # to open up new local costmap clearance before trying again.
+        self.stuck_backup_sec = self.declare_parameter('stuck_backup_sec', 3.0).value
+        self.backup_step = self.declare_parameter('backup_step', 0.4).value
+        self.no_heading_since = None
+
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
@@ -282,8 +295,22 @@ class HybridExplorer(Node):
 
             result = self._best_avoid_heading()
             if result is None:
+                now = self.get_clock().now()
+                if self.no_heading_since is None:
+                    self.no_heading_since = now
+                stuck_for = (now - self.no_heading_since).nanoseconds / 1e9
+                if stuck_for >= self.stuck_backup_sec:
+                    pose = self._pose_in('map')
+                    if pose is not None:
+                        mx, my, myaw = pose
+                        gx = mx - self.backup_step * math.cos(myaw)
+                        gy = my - self.backup_step * math.sin(myaw)
+                        self._send_goal(gx, gy, myaw, 'BACKUP')
+                        self.no_heading_since = None
+                        return
                 self.get_logger().warn('Obstacle ahead but no clear candidate heading -- waiting', throttle_duration_sec=2.0)
                 return
+            self.no_heading_since = None
             mx, my, new_yaw = result
             gx = mx + self.avoid_step * math.cos(new_yaw)
             gy = my + self.avoid_step * math.sin(new_yaw)
