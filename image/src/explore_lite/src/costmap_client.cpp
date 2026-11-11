@@ -69,8 +69,23 @@ Costmap2DClient::Costmap2DClient(rclcpp::Node& node, const tf2_ros::Buffer* tf)
   node_.get_parameter("transform_tolerance", transform_tolerance_);
 
   /* initialize costmap */
+  // Explicit RELIABLE + TRANSIENT_LOCAL to match RTAB-Map's/Nav2's own
+  // costmap publishers exactly (confirmed via `ros2 topic info -v /map`:
+  // Reliability RELIABLE, Durability TRANSIENT_LOCAL, depth 1). The plain
+  // `create_subscription<T>(topic, 1000, ...)` overload used here before
+  // defaults to RELIABLE + VOLATILE -- per the DDS spec a VOLATILE
+  // subscriber should still be compatible with a TRANSIENT_LOCAL
+  // publisher, but this project already found empirically (see
+  // hybrid_explorer.py's grid_qos comment) that this does not hold in
+  // practice on this specific CycloneDDS setup: a mismatched subscriber
+  // receives nothing at all, silently. Confirmed live 2026-11-11: explore_
+  // node sat on "Waiting for costmap to become available" indefinitely
+  // with exactly this VOLATILE-vs-TRANSIENT_LOCAL mismatch.
+  rclcpp::QoS costmap_qos(rclcpp::KeepLast(1));
+  costmap_qos.reliable();
+  costmap_qos.transient_local();
   costmap_sub_ = node_.create_subscription<nav_msgs::msg::OccupancyGrid>(
-      costmap_topic, 1000,
+      costmap_topic, costmap_qos,
       [this](const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
         costmap_received_ = true;
         updateFullMap(msg);
