@@ -119,7 +119,14 @@ class HybridExplorer(Node):
         # retreat if the robot hasn't actually moved in stuck_progress_sec.
         self.stuck_progress_sec = self.declare_parameter('stuck_progress_sec', 3.0).value
         self.stuck_progress_dist = self.declare_parameter('stuck_progress_dist', 0.08).value
-        self.progress_anchor = None  # (x, y, ros_time) at last confirmed movement
+        # Flagged by Codex review (2026-11-11): the check below used to be
+        # translation-only (math.hypot(x,y)), so a legitimate in-place turn
+        # -- e.g. rotating onto a newly-picked AVOID heading -- counted as
+        # "no real movement" and could get cancelled by this watchdog before
+        # the turn even finished. stuck_progress_yaw_rad (~11 deg) lets a
+        # pure rotation count as progress too.
+        self.stuck_progress_yaw_rad = self.declare_parameter('stuck_progress_yaw_rad', 0.20).value
+        self.progress_anchor = None  # (x, y, yaw, ros_time) at last confirmed movement
 
         # Confirmed live (2026-11-10): the progress watchdog above correctly
         # detects and recovers from a genuine dead end (e.g. a corner), but
@@ -366,12 +373,14 @@ class HybridExplorer(Node):
         now = self.get_clock().now()
 
         if self.progress_anchor is None:
-            self.progress_anchor = (mx, my, now)
+            self.progress_anchor = (mx, my, myaw, now)
             return False
 
-        ax, ay, at = self.progress_anchor
-        if math.hypot(mx - ax, my - ay) >= self.stuck_progress_dist:
-            self.progress_anchor = (mx, my, now)
+        ax, ay, ayaw, at = self.progress_anchor
+        yaw_delta = math.atan2(math.sin(myaw - ayaw), math.cos(myaw - ayaw))
+        if (math.hypot(mx - ax, my - ay) >= self.stuck_progress_dist
+                or abs(yaw_delta) >= self.stuck_progress_yaw_rad):
+            self.progress_anchor = (mx, my, myaw, now)
             return False
 
         if (now - at).nanoseconds / 1e9 < self.stuck_progress_sec:
@@ -385,7 +394,7 @@ class HybridExplorer(Node):
             self._cancel_current_goal()
         gx, gy = self._backup_target(mx, my, myaw)
         self._send_goal(gx, gy, myaw, 'BACKUP')
-        self.progress_anchor = (mx, my, now)
+        self.progress_anchor = (mx, my, myaw, now)
         return True
 
     def _tick(self):

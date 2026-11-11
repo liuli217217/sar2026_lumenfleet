@@ -52,7 +52,13 @@
               <ClearEntireCostmap name="ClearLocalCostmap-Subtree" service_name="local_costmap/clear_entirely_local_costmap"/>
               <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
             </Sequence>
-            <BackUp backup_dist="0.30" backup_speed="0.15" error_code_id="{backup_code_id}"/>
+            <!-- backup_speed raised 0.15->0.50 (2026-11-11): 0.15 m/s sits
+                 below collision_debounce's 0.4 m/s linear deadband, so this
+                 BT-internal recovery action was silently commanding zero
+                 regardless of how often it fired. Confirmed via Codex
+                 review of this file alongside the diagnostic handoff at
+                 docs/DIAGNOSTIC_STUCK_NEAR_OBSTACLES_NO_RECOVERY_2026-11-11.md. -->
+            <BackUp backup_dist="0.30" backup_speed="0.50" error_code_id="{backup_code_id}"/>
             <Spin spin_dist="1.57" error_code_id="{spin_error_code}"/>
             <Wait wait_duration="5.0"/>
           </RoundRobin>

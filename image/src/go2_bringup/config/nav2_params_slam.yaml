@@ -310,8 +310,27 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: false
     feedback: "OPEN_LOOP"
-    max_velocity: [0.40, 0.25, 0.80]    # [vx, vy, wz] — hard caps
-    min_velocity: [-0.15, -0.25, -0.80]
+    # Raised 2026-11-11: these caps were never updated when MPPI's own
+    # vx_max/vx_min/wz_max and the bridge's caps were raised (2026-11-10)
+    # -- this node sits between controller_server and collision_monitor in
+    # the pipeline (cmd_vel_nav -> velocity_smoother -> cmd_vel_smoothed),
+    # so it was silently re-clamping every command back down to the old
+    # numbers regardless of what MPPI/the bridge allowed. Combined with
+    # SlowZone's 50% cut and collision_debounce's 0.4/0.6 deadband, the old
+    # caps floored every axis to exactly zero whenever the robot was in/near
+    # SlowZone: forward 0.40*0.5=0.20 (<0.4 deadband), reverse
+    # -0.15*0.5=-0.075 (<<0.4), lateral 0.25*0.5=0.125 (<<0.4), rotation
+    # 0.80*0.5=0.40 (<0.6 angular deadband) -- a deterministic command-
+    # blocking condition, not just "MPPI might choose a low speed."
+    # Confirmed via Codex review of this source + the diagnostic handoff
+    # at docs/DIAGNOSTIC_STUCK_NEAR_OBSTACLES_NO_RECOVERY_2026-11-11.md.
+    # Now matches MPPI's own ceilings (vx_max=0.8/vx_min=-1.0/wz_max=1.8);
+    # vy is raised generously too even though MPPI's vy_max=0.25 remains
+    # the real lateral ceiling and itself still sits below deadband_linear
+    # (0.25 < 0.4) -- lateral motion clearing the deadband is a separate,
+    # still-open gap, not fixed by this change alone.
+    max_velocity: [0.80, 0.80, 1.80]    # [vx, vy, wz] — hard caps
+    min_velocity: [-1.00, -0.80, -1.80]
     max_accel:  [0.4, 0.4, 0.8]
     max_decel: [-0.4, -0.4, -0.8]
     odom_topic: /utlidar/robot_odom_retimed
