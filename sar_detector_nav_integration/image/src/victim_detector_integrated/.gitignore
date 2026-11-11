@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+install/
+log/
+runs/
+datasets/
+*.engine
+*.onnx

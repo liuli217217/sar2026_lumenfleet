@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<!-- DETECTOR_NAV_INTEGRATION: new target mapping package. -->
+<package format="3"><name>sar_target_mapping</name><version>0.1.0</version>
+<description>Map confirmed image detections using aligned depth and timestamped TF.</description>
+<maintainer email="lumen-fleet@example.com">Lumen Fleet</maintainer><license>Apache-2.0</license>
+<buildtool_depend>ament_python</buildtool_depend>
+<exec_depend>python3-opencv</exec_depend><exec_depend>python3-numpy</exec_depend>
+<exec_depend>rclpy</exec_depend><exec_depend>sensor_msgs</exec_depend><exec_depend>vision_msgs</exec_depend>
+<exec_depend>visualization_msgs</exec_depend><exec_depend>std_msgs</exec_depend><exec_depend>tf2_ros</exec_depend>
+<exec_depend>launch</exec_depend><exec_depend>launch_ros</exec_depend><exec_depend>ament_index_python</exec_depend>
+<exec_depend>victim_detector_integrated</exec_depend>
+<export><build_type>ament_python</build_type></export></package>

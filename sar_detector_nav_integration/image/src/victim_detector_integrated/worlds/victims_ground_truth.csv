@@ -1,0 +1,6 @@
+name,x,y,posture
+victim_1,3.0,0.5,站立
+victim_2,6.5,2.0,倒地
+victim_3,4.0,-2.5,站立
+victim_4,-2.0,-3.0,倒地
+victim_5,8.0,-0.5,站立

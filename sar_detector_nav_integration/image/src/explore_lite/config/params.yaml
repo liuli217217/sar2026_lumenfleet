@@ -1,0 +1,19 @@
+/**:
+  ros__parameters:
+    robot_base_frame: base_link
+    return_to_init: true
+    costmap_topic: map
+    costmap_updates_topic: map_updates
+    visualize: true
+    planner_frequency: 0.15
+    progress_timeout: 30.0
+    potential_scale: 3.0
+    orientation_scale: 0.0
+    gain_scale: 1.0
+    # Raised from 0.3: observed a ~1.6s TF staleness gap under full system
+    # load (slam_toolbox + Nav2 + explore_lite + bridge + laserscan +
+    # body_filter + rviz + camera all running at once). At 0.3s, a single
+    # transient lag was misread as "no frontiers left" and exploration
+    # stopped early despite the map being far from fully explored.
+    transform_tolerance: 2.0
+    min_frontier_size: 1.5

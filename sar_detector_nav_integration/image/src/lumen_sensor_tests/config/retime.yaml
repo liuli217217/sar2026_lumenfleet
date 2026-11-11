@@ -1,0 +1,14 @@
+# Competition template: discover topics and fill only the inputs you need.
+# Launch requires enabled:=true explicitly; this file alone cannot enable it.
+receive_time_adapter:
+  ros__parameters:
+    enabled: false
+    cloud_input: ''
+    cloud_output: /lumen/retimed/cloud
+    imu_input: ''
+    imu_output: /lumen/retimed/imu
+    odom_input: ''
+    odom_output: /lumen/retimed/odom
+    input_reliability: best_effort
+    stale_timeout_sec: 1.0
+    report_rate_hz: 1.0
