@@ -17,3 +17,7 @@
     # stopped early despite the map being far from fully explored.
     transform_tolerance: 2.0
     min_frontier_size: 1.5
+    # Fixes the resend-thrash bug this package was abandoned for: see
+    # makePlan()/explore.cpp. Same value as hybrid_explorer.py's
+    # min_commit_sec for the identical failure shape.
+    min_replan_interval: 1.5

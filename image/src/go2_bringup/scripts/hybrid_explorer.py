@@ -105,6 +105,21 @@ class HybridExplorer(Node):
         self.backup_step = self.declare_parameter('backup_step', 0.4).value
         self.no_heading_since = None
 
+        # Live testing 2026-11-11: BACKUP (reversing) turned out to be the
+        # riskier default response to a blocked heading, not rotation --
+        # the robot never looks behind itself before retreating, while most
+        # dead-ends are a flat wall/corner with clearance to the sides and
+        # behind that a pure in-place turn handles fine; only a true tight
+        # pocket blocks rotation too. Tried between _best_avoid_heading()
+        # (translate) failing and the BACKUP fallback: if a ring around the
+        # robot at rotation_clear_radius is clear in the local costmap, turn
+        # in place toward the best-scoring heading instead of retreating.
+        # Matches the same reorder applied to the BT's own RecoveryActions
+        # RoundRobin (navigate_to_pose_backup_first.xml).
+        self.rotation_clear_radius = self.declare_parameter('rotation_clear_radius', 0.40).value
+        self.rotation_check_angles_deg = self.declare_parameter(
+            'rotation_check_angles_deg', list(range(0, 360, 30))).value
+
         # Independent of the no-clear-heading case above: confirmed live
         # (2026-11-10), with consider_footprint enabled on MPPI, that
         # _heading_blocked()'s simple box-sample check can call a heading
@@ -312,6 +327,34 @@ class HybridExplorer(Node):
             return None
         return mx, my, myaw + best_offset
 
+    def _rotation_clear(self, grid, rx, ry):
+        """True if a full ring around (rx, ry) at rotation_clear_radius is
+        free of lethal cost -- i.e. turning in place here, in ANY
+        direction, will not clip the footprint's swept circle against
+        something. Direction-independent, unlike _heading_blocked()."""
+        for deg in self.rotation_check_angles_deg:
+            a = math.radians(deg)
+            wx = rx + self.rotation_clear_radius * math.cos(a)
+            wy = ry + self.rotation_clear_radius * math.sin(a)
+            val = grid_value(grid, wx, wy)
+            if val is not None and val >= self.obstacle_threshold:
+                return False
+        return True
+
+    def _best_rotate_heading(self, mx, my, myaw):
+        """Like _best_avoid_heading(), but scores every candidate heading
+        regardless of forward clearance -- rotating doesn't translate, so
+        _heading_blocked()'s forward-box check doesn't apply. Only called
+        after _rotation_clear() already confirmed the swept turn itself is
+        safe."""
+        best_offset, best_score = None, None
+        for deg in self.candidate_headings_deg:
+            offset = math.radians(deg)
+            score = self._score_heading(mx, my, myaw, offset)
+            if best_score is None or score > best_score:
+                best_score, best_offset = score, offset
+        return best_offset
+
     def _send_goal(self, x, y, yaw, label):
         goal = NavigateToPose.Goal()
         pose = PoseStamped()
@@ -437,6 +480,17 @@ class HybridExplorer(Node):
 
             result = self._best_avoid_heading()
             if result is None:
+                local_pose = self._pose_in(self.local_costmap.header.frame_id or 'odom')
+                map_pose = self._pose_in('map')
+                if local_pose is not None and map_pose is not None:
+                    lx, ly, _ = local_pose
+                    if self._rotation_clear(self.local_costmap, lx, ly):
+                        mx, my, myaw = map_pose
+                        best_offset = self._best_rotate_heading(mx, my, myaw)
+                        if best_offset is not None:
+                            self.no_heading_since = None
+                            self._send_goal(mx, my, myaw + best_offset, 'ROTATE')
+                            return
                 now = self.get_clock().now()
                 if self.no_heading_since is None:
                     self.no_heading_since = now

@@ -133,6 +133,14 @@ private:
   rclcpp::Time last_progress_;
   size_t last_markers_count_;
 
+  // Guards against a synchronous resend-thrash loop: reachedGoal() calls
+  // makePlan() immediately and unconditionally on SUCCEEDED, bypassing
+  // planner_frequency_ entirely. If the frontier search immediately
+  // re-proposes the same (or another instantly-failing) centroid, this is
+  // the only thing preventing an unbounded synchronous resend chain.
+  rclcpp::Time last_goal_sent_;
+  double min_replan_interval_;
+
   geometry_msgs::msg::Pose initial_pose_;
   void returnToInitialPose(void);
 

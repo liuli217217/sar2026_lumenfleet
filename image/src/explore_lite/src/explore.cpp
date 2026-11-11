@@ -70,6 +70,9 @@ Explore::Explore()
   this->declare_parameter<float>("gain_scale", 1.0);
   this->declare_parameter<float>("min_frontier_size", 0.5);
   this->declare_parameter<bool>("return_to_init", false);
+  // Same value/pattern as hybrid_explorer.py's min_commit_sec, fixing the
+  // identical resend-thrash failure shape -- see makePlan().
+  this->declare_parameter<float>("min_replan_interval", 1.5);
 
   this->get_parameter("planner_frequency", planner_frequency_);
   this->get_parameter("progress_timeout", timeout);
@@ -80,8 +83,12 @@ Explore::Explore()
   this->get_parameter("min_frontier_size", min_frontier_size);
   this->get_parameter("return_to_init", return_to_init_);
   this->get_parameter("robot_base_frame", robot_base_frame_);
+  this->get_parameter("min_replan_interval", min_replan_interval_);
 
   progress_timeout_ = timeout;
+  // Comfortably in the past so the very first makePlan() call is never
+  // blocked by the guard below, regardless of sim-time-vs-wall-clock epoch.
+  last_goal_sent_ = this->now() - rclcpp::Duration::from_seconds(min_replan_interval_ + 1.0);
   move_base_client_ =
       rclcpp_action::create_client<nav2_msgs::action::NavigateToPose>(
           this, ACTION_NAME);
@@ -297,6 +304,22 @@ void Explore::makePlan()
     return;
   }
 
+  // Guard against a synchronous resend-thrash loop. reachedGoal() calls
+  // makePlan() immediately and unconditionally on SUCCEEDED (bypassing
+  // planner_frequency_ entirely), and the blacklist-timeout branch above
+  // does the same. If the frontier search immediately re-proposes a
+  // centroid that instantly fails again (common right at a wall/corner
+  // where sensor coverage hasn't caught up yet), goal_active_ is already
+  // false by the time either of those calls back into makePlan(), so
+  // without this guard the same/another instantly-failing goal gets
+  // resent in an unbounded synchronous chain. Confirmed live with the
+  // identical failure shape in hybrid_explorer.py, fixed there with the
+  // same min_commit_sec pattern.
+  if ((this->now() - last_goal_sent_) < tf2::durationFromSec(min_replan_interval_)) {
+    RCLCPP_DEBUG(logger_, "Replanned within min_replan_interval -- waiting for next tick");
+    return;
+  }
+
   RCLCPP_DEBUG(logger_, "Sending goal to move base nav2");
 
   // send goal to move_base if we have something new to pursue
@@ -307,6 +330,7 @@ void Explore::makePlan()
   goal.pose.header.stamp = this->now();
 
   goal_active_ = true;
+  last_goal_sent_ = this->now();
   auto send_goal_options = rclcpp_action::Client<
       nav2_msgs::action::NavigateToPose>::SendGoalOptions();
 
