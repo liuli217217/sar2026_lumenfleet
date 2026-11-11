@@ -1,0 +1,27 @@
+image_width: 1280
+image_height: 720
+camera_name: go2_front_camera
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [745.2020123654502, 0.0, 633.0006068028338,
+         0.0, 746.8030735796099, 364.2542196896758,
+         0.0, 0.0, 1.0]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [-0.3889596158808927, 0.32625212260913455, 0.00222700376027155,
+         0.0027305145364019032, -0.29560233039491735]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1.0, 0.0, 0.0,
+         0.0, 1.0, 0.0,
+         0.0, 0.0, 1.0]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [745.2020123654502, 0.0, 633.0006068028338, 0.0,
+         0.0, 746.8030735796099, 364.2542196896758, 0.0,
+         0.0, 0.0, 1.0, 0.0]

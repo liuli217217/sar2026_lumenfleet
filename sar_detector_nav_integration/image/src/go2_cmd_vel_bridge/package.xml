@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>go2_cmd_vel_bridge</name>
+  <version>0.0.1</version>
+  <description>Bridge /cmd_vel to Unitree Go2 sport-mode requests</description>
+
+  <maintainer email="you@example.com">you</maintainer>
+  <license>BSD-3-Clause</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rcl_interfaces</depend>
+  <depend>geometry_msgs</depend>
+  <depend>unitree_api</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

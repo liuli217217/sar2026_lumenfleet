@@ -1,0 +1,19 @@
+# DETECTOR_NAV_INTEGRATION: additive image; original navigation Dockerfile preserved.
+ARG NAV_IMAGE=lumen-jazzy:nav-integration-base
+FROM ${NAV_IMAGE}
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-venv python3-pip ros-jazzy-vision-msgs \
+    && rm -rf /var/lib/apt/lists/*
+COPY src/victim_detector_integrated/ /opt/lumen_ws/src/victim_detector_integrated/
+COPY src/sar_target_mapping/ /opt/lumen_ws/src/sar_target_mapping/
+# DETECTOR_NAV_INTEGRATION: mission orchestration; original Nav code unchanged.
+COPY src/sar_rescue_manager/ /opt/lumen_ws/src/sar_rescue_manager/
+RUN source /opt/ros/jazzy/setup.bash && source /opt/lumen_ws/install/setup.bash \
+    && colcon build --merge-install --packages-select victim_detector_integrated sar_target_mapping sar_rescue_manager \
+    && rm -rf build log
+# Keep pip packages out of navigation's system Python environment.
+# Generic wheels provide a baseline only; Jetson GPU inference requires hardware validation.
+RUN python3 -m venv --system-site-packages /opt/detector-venv \
+    && /opt/detector-venv/bin/python3 -m pip install --no-cache-dir \
+       -r /opt/lumen_ws/src/victim_detector_integrated/requirements-integration.txt

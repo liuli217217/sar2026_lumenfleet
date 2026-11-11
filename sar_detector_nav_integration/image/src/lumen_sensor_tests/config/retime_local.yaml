@@ -1,0 +1,13 @@
+# Known LOCAL topic names; do not assume these on the competition robot.
+receive_time_adapter:
+  ros__parameters:
+    enabled: false
+    cloud_input: /utlidar/cloud
+    cloud_output: /lumen/retimed/cloud
+    imu_input: /utlidar/imu
+    imu_output: /lumen/retimed/imu
+    odom_input: /utlidar/robot_odom
+    odom_output: /lumen/retimed/odom
+    input_reliability: best_effort
+    stale_timeout_sec: 1.0
+    report_rate_hz: 1.0

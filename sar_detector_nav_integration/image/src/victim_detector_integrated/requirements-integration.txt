@@ -1,0 +1,4 @@
+# DETECTOR_NAV_INTEGRATION: baseline constraints, not a validated Jetson GPU lockfile.
+ultralytics>=8.3,<9
+numpy<2
+opencv-python<4.12

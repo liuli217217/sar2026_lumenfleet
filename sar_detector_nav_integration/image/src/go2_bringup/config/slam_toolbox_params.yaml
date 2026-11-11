@@ -1,0 +1,96 @@
+slam_toolbox:
+  ros__parameters:
+    use_sim_time: false
+
+    # Solver — matches go2_ros2_sdk. Without an explicit solver plugin,
+    # slam_toolbox falls back to a default that optimizes scan alignment
+    # less precisely; this was the main gap from go2_ros2_sdk's config.
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: None
+
+    # Frames
+    odom_frame:  odom
+    map_frame:   map
+    base_frame:  base_link
+
+    # Input scan (UTLidar-derived 2D scan)
+    scan_topic: /utlidar/scan
+    mode: mapping
+
+    # Map resolution and sensor range — matches go2_ros2_sdk
+    resolution: 0.05
+    max_laser_range: 20.0
+
+    # Serialize map to this prefix on save
+    map_file_name: /home/unitree/.ros/go2_slam_toolbox
+    map_start_pose: [0.0, 0.0, 0.0]
+
+    # How often to update map cells
+    throttle_scans: 1
+    minimum_time_interval: 0.2
+    transform_publish_period: 0.02
+    # Lowered from 5.0: Nav2's global costmap (static_layer) resizes to match
+    # whatever /map it last received, overriding any width/height configured
+    # on the costmap itself. A 5s-stale map let an actively-exploring robot
+    # walk past the costmap's last-known bounds ("Robot is out of bounds of
+    # the costmap!"). Shrinking this window keeps the costmap closer to the
+    # map's actual, growing extent.
+    map_update_interval: 1.0
+
+    # TF tolerance — generous to handle timestamp jitter from retime_utlidar
+    transform_timeout: 0.5
+    tf_buffer_duration: 30.0
+
+    # Only add a new node if the robot has moved this much
+    minimum_travel_distance: 0.5
+    minimum_travel_heading: 0.5
+
+    # Scan matching — matches go2_ros2_sdk. Missing before; this governs how
+    # much weight the matcher gives scan alignment vs. the odometry prior,
+    # directly affecting pose jumpiness.
+    use_scan_matching: true
+    use_scan_barycenter: true
+    scan_buffer_size: 10
+    scan_buffer_maximum_scan_distance: 10.0
+    link_match_minimum_response_fine: 0.1
+    link_scan_maximum_distance: 1.5
+
+    # Loop closure — matches go2_ros2_sdk
+    do_loop_closing: true
+    loop_search_maximum_distance: 3.0
+    loop_match_minimum_chain_size: 10
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_minimum_response_fine: 0.45
+
+    # Correlation parameters
+    correlation_search_space_dimension: 0.5
+    correlation_search_space_resolution: 0.01
+    correlation_search_space_smear_deviation: 0.1
+
+    # Loop-closure search space — separate from the thresholds above, also
+    # matches go2_ros2_sdk. Was entirely missing.
+    loop_search_space_dimension: 8.0
+    loop_search_space_resolution: 0.05
+    loop_search_space_smear_deviation: 0.03
+
+    # Scan matcher penalties — matches go2_ros2_sdk. Was entirely missing;
+    # these are the main lever on alignment precision between scans.
+    distance_variance_penalty: 0.5
+    angle_variance_penalty: 1.0
+    fine_search_angle_offset: 0.00349
+    coarse_search_angle_offset: 0.349
+    coarse_angle_resolution: 0.0349
+    minimum_angle_penalty: 0.9
+    minimum_distance_penalty: 0.5
+    use_response_expansion: true
+
+    # Large stack for big environments
+    stack_size_to_use: 400000000
+
+    debug_logging: false
+    interactive_mode: true
