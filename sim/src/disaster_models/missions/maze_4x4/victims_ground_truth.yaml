@@ -1,0 +1,9 @@
+# Ground truth - for the mission monitor only, never for the robot.
+# Body: centre (x, y), head direction [deg], length 0.94 m, half width 0.22 m.
+length: 0.94
+half_width: 0.22
+victims:
+  - {name: victim_1, x: 2.920, y: 0.350, head_deg: -180.0}
+  - {name: victim_2, x: -0.020, y: -0.970, head_deg: 0.0}
+  - {name: victim_3, x: 2.920, y: -3.050, head_deg: -180.0}
+  - {name: victim_4, x: 1.420, y: -3.050, head_deg: -180.0}

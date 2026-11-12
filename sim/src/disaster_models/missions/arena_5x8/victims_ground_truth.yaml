@@ -1,0 +1,10 @@
+# Ground truth - for the mission monitor only, never for the robot.
+# Body: oriented box, centre (x, y), heading [deg] (lying: head direction,
+# sitting: facing direction), length along the heading, half width.
+length: 1.82
+half_width: 0.2
+victims:
+  - {name: victim_1, pose: lying, x: 0.020, y: -2.480, head_deg: -90.0, length: 1.82, half_width: 0.2}
+  - {name: victim_2, pose: sitting, x: 6.800, y: -0.600, head_deg: -180.0, length: 0.95, half_width: 0.375}
+  - {name: victim_3, pose: lying, x: 6.330, y: -3.050, head_deg: 0.0, length: 1.82, half_width: 0.2}
+  - {name: victim_4, pose: sitting, x: 3.150, y: 0.600, head_deg: -90.0, length: 0.95, half_width: 0.375}

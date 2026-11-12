@@ -1,0 +1,39 @@
+base_to_footprint_ekf:
+  ros__parameters:
+    frequency: 50.0
+    publish_tf: true
+    transform_timeout: 0.01
+    transform_time_offset: 0.045
+    two_d_mode: false
+    # diagnostics_agg: true
+
+    #x     , y     , z,
+    #roll  , pitch , yaw,
+    #vx    , vy    , vz,
+    #vroll , vpitch, vyaw,
+    #ax    , ay    , az
+
+    pose0: base_to_footprint_pose
+    # base_footprint -> base_link only carries height, roll and pitch.
+    # base_to_footprint_pose has x = y = yaw = 0, which keeps those anchored;
+    # the IMU yaw must NOT be fused here (it would cancel the heading in /odom,
+    # which footprint_to_odom_ekf estimates).
+    pose0_config: [true,  true,  true,
+                  true,  true,  true,
+                  false, false, false,
+                  false, false, false,
+                  false, false, false]
+
+    imu0: imu/data
+    # imu0_config: [false, false, false,
+    #               false, false, false,
+    #               true, true, true,
+    #               false, false, false,
+    #               false, false, false]
+    imu0_config: [false, false, false,
+                  true, true, false,   # orientation: roll, pitch (not yaw)
+                  false, false, false,
+                  true, true, false,   # angular velocity: vroll, vpitch (not vyaw)
+                  false, false, false]
+    odom_frame: base_footprint
+    world_frame: base_footprint
