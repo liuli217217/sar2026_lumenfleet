@@ -383,12 +383,25 @@ void Explore::makePlan()
   // Room B box-cluster case this review was investigating. Heading toward
   // the goal is a plain yaw-only quaternion, computed directly instead of
   // pulling in tf2::Quaternion for one rotation.
-  {
-    const double dx = target_position.x - pose.position.x;
-    const double dy = target_position.y - pose.position.y;
+  // Regression found live on the real robot (2026-11-12): when the
+  // frontier centroid is very close to the robot's own position, dx/dy
+  // are both near zero and atan2(dy, dx) becomes noise-sensitive -- every
+  // replan recomputed a near-random heading from essentially the same
+  // spot, so the robot never stopped reorienting (continuous in-place
+  // rotation, confirmed by [FrontierSearch] logging the same single
+  // frontier passing the filter on every rapid-fire replan, meaning
+  // reachedGoal()'s SUCCEEDED callback was firing almost instantly).
+  // Below this distance, a "direction of travel" heading isn't
+  // meaningful anyway, so keep the robot's current orientation instead
+  // of computing an unstable one.
+  const double dx = target_position.x - pose.position.x;
+  const double dy = target_position.y - pose.position.y;
+  if (std::hypot(dx, dy) > 0.3) {
     const double yaw = std::atan2(dy, dx);
     goal.pose.pose.orientation.z = std::sin(yaw / 2.0);
     goal.pose.pose.orientation.w = std::cos(yaw / 2.0);
+  } else {
+    goal.pose.pose.orientation = pose.orientation;
   }
   goal.pose.header.frame_id = costmap_client_.getGlobalFrameID();
   goal.pose.header.stamp = this->now();
