@@ -107,6 +107,23 @@ class CollisionDebounce(Node):
         self.deadband_angular = self.declare_parameter('deadband_angular', 0.3).value
         self.noise_floor_linear = self.declare_parameter('noise_floor_linear', 0.05).value
         self.noise_floor_angular = self.declare_parameter('noise_floor_angular', 0.05).value
+        # Found live the night before competition: collision_monitor has
+        # been directly observed chattering between STOP/SLOWDOWN/normal
+        # every 50-300ms at zone boundaries (documented elsewhere in this
+        # file's own header). Escalation takes effect immediately, by
+        # design, but de-escalation requires release_dwell_sec of
+        # UNINTERRUPTED improvement -- any single flicker back to the
+        # worse severity resets that timer to zero. At this chatter rate,
+        # the uninterrupted window needed to de-escalate could never
+        # actually complete, latching the robot at a stale held_twist
+        # (often zero) indefinitely even while most readings were fine --
+        # confirmed live: /cmd_vel sat at flat zero while /cmd_vel_raw
+        # showed real, usable commands. max_latch_sec is a safety-
+        # preserving escape hatch: never forces a release while the
+        # CURRENT reading is still bad, only stops insisting on a perfect
+        # uninterrupted dwell window once we've been stuck for this long
+        # despite the current instant genuinely reporting improvement.
+        self.max_latch_sec = self.declare_parameter('max_latch_sec', 2.0).value
 
         self.current_severity = 0
         self.held_twist = Twist()
@@ -114,6 +131,7 @@ class CollisionDebounce(Node):
         self.candidate_since = None
         self.last_state_severity = 0
         self.last_cmd_time = None
+        self.severity_entered_at = self.get_clock().now()
 
         qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE,
                          durability=DurabilityPolicy.VOLATILE)
@@ -161,6 +179,8 @@ class CollisionDebounce(Node):
         incoming = self.last_state_severity
 
         if incoming >= self.current_severity:
+            if incoming != self.current_severity:
+                self.severity_entered_at = now
             self.current_severity = incoming
             self.candidate_severity = None
             self.candidate_since = None
@@ -173,8 +193,15 @@ class CollisionDebounce(Node):
             self.candidate_since = now
 
         elapsed = (now - self.candidate_since).nanoseconds / 1e9
-        if elapsed >= self.release_dwell:
+        latched_for = (now - self.severity_entered_at).nanoseconds / 1e9
+        # Release either the normal way (this better severity held
+        # uninterrupted for release_dwell_sec) or, if chatter has kept
+        # that from ever completing for max_latch_sec, release anyway --
+        # safe because we're already inside incoming < current_severity,
+        # i.e. the CURRENT instant genuinely reports improvement.
+        if elapsed >= self.release_dwell or latched_for >= self.max_latch_sec:
             self.current_severity = incoming
+            self.severity_entered_at = now
             self.candidate_severity = None
             self.candidate_since = None
             self.held_twist = msg
@@ -194,6 +221,8 @@ class CollisionDebounce(Node):
                     f'collision_debounce: no cmd_vel from collision_monitor for {age:.2f}s '
                     f'(timeout {self.input_timeout}s) -- forcing stop')
             self.held_twist = Twist()
+            if self.current_severity != MOST_RESTRICTIVE:
+                self.severity_entered_at = self.get_clock().now()
             self.current_severity = MOST_RESTRICTIVE
             self.candidate_severity = None
             self.candidate_since = None
