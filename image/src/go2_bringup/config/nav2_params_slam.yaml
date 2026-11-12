@@ -339,9 +339,37 @@ velocity_smoother:
     velocity_timeout: 1.0
 
 # ── Safety: collision_monitor ─────────────────────────────────────────────────
-# StopZone  — immediately halts the robot if any scan point enters the polygon
-# SlowZone  — halves velocity when a scan point enters the outer polygon
-# Both zones are visualised in RViz for debugging
+# StopZone  — halts the robot before it drives into something
+# SlowZone  — cuts velocity when a scan point enters the outer polygon
+# Both zones are visualised in RViz for debugging.
+#
+# Both are DIRECTION-AWARE since 2026-11-12 (type: velocity_polygon). They
+# used to be static `type: polygon`, which decides purely on "is a scan point
+# inside this box", with no regard for which way the command would move the
+# robot. That is a one-way trap: once the obstacle is inside StopZone, EVERY
+# command is zeroed, including the one that would back out of it. Measured on
+# the 12-goal benchmark (PERF_clean/PERF_drift, 2026-11-12): the robot parked
+# at 0.379 m from a pillar -- inside StopZone's 0.50 m half-length -- and
+# never moved again. Goals 3 through 11 each travelled exactly 0.00 m, and
+# both recovery behaviours failed 10/10 because their escape commands were
+# zeroed by the same polygon: MPPI asked for -0.564 m/s of reverse, the
+# monitor's output was -0.144, and what finally reached the robot was 0.0.
+# Success rate 2/12.
+#
+# velocity_polygon selects one of several sub-polygons from the COMMANDED
+# velocity, so the active stop box covers the direction being travelled.
+# Forward commands are still stopped by an obstacle ahead; reverse commands
+# are judged against what is behind. The lateral half-width is unchanged in
+# every sub-polygon -- only the x extent is split -- so side protection is
+# exactly as before. Each sub-polygon keeps a 0.15 m margin on its trailing
+# side, so "escaping" can never mean shearing into something immediately
+# behind.
+#
+# The sub-polygon velocity ranges MUST cover every velocity the pipeline can
+# emit (velocity_smoother caps: vx in [-1.0, 0.8], wz in [-1.8, 1.8]), with
+# margin. If a command matches no sub-polygon the node logs "Velocity is not
+# covered by any of the velocity polygons" and KEEPS THE PREVIOUS POLYGON --
+# a silent, stale-geometry failure. Grep the startup log for that string.
 collision_monitor:
   ros__parameters:
     use_sim_time: false
@@ -353,43 +381,87 @@ collision_monitor:
     transform_tolerance: 0.2
     source_timeout: 1.0
     base_shift_correction: true
-    stop_pub_timeout: 2.0
+    # Raised from 2.0 (2026-11-12). collision_monitor stops publishing
+    # cmd_vel_out entirely after this long of continuous zero output. That is
+    # the right behaviour when something else may want the topic, but nothing
+    # else publishes cmd_vel_raw in this stack, and the silence made an
+    # enforced stop indistinguishable from a dead pipeline: collision_debounce
+    # saw its input go stale, latched its own fail-safe stop, and the whole
+    # condition went silent -- 9447 zero commands and not one log line. Keeping
+    # the monitor talking keeps the state observable downstream. See the
+    # matching watchdog fix in collision_debounce.py.
+    stop_pub_timeout: 10.0
     polygons: ["StopZone", "SlowZone"]
     StopZone:
-      type: polygon
-      # Shrunk 2026-11-10: against the real footprint (0.70x0.31m, see
-      # inflation_layer above), the previous ±0.60/±0.35 size left a 0.25m
-      # front/back and 0.195m side margin -- generous enough that the robot
-      # was reading StopZone/SlowZone from mere proximity to a corner wall
-      # it was never going to hit, which fed the approach/backup dead-end
-      # loop (see hybrid_explorer.py's blacklist fix) and the SlowZone 50%
-      # cut pushing MPPI's output below the velocity deadband during short
-      # recovery goals. Now carries a 0.15m front/back, 0.12m side margin --
-      # still a real stopping buffer, just not oversized for tight corners.
-      # Flat double_array: x1,y1, x2,y2, x3,y3, x4,y4
-      points: "[[-0.50, -0.275], [-0.50, 0.275], [0.50, 0.275], [0.50, -0.275]]"
+      type: velocity_polygon
       action_type: stop
-      max_points: 3
+      # Was the deprecated `max_points: 3` (Nav2 reads that as min_points 4).
+      # Stated directly now -- see also SlowZone, where max_points was
+      # silently overriding an explicit min_points.
+      min_points: 4
+      enabled: true
       visualize: true
       polygon_pub_topic: collision_monitor/stop_zone
+      # false: sub-polygons are selected on signed vx. The Go2 is configured
+      # Omni, but MPPI's vy_max is 0.25 and strafing is rare; a pure strafe
+      # falls into stop_forward, whose lateral half-width is the same 0.275,
+      # so sideways protection is identical either way.
+      holonomic: false
+      velocity_polygons: ["stop_forward", "stop_reverse"]
+      # Geometry below preserves the 2026-11-10 sizing: ±0.275 half-width
+      # (0.12 m side margin on the 0.70x0.31 m footprint) and 0.50 m ahead of
+      # centre (0.15 m front margin). Only the trailing extent is cut back,
+      # from 0.50 m to 0.15 m, which is what makes backing out possible.
+      stop_forward:
+        points: "[[-0.15, -0.275], [-0.15, 0.275], [0.50, 0.275], [0.50, -0.275]]"
+        linear_min: 0.0
+        linear_max: 1.2
+        theta_min: -2.5
+        theta_max: 2.5
+      stop_reverse:
+        points: "[[-0.50, -0.275], [-0.50, 0.275], [0.15, 0.275], [0.15, -0.275]]"
+        linear_min: -1.2
+        linear_max: 0.0
+        theta_min: -2.5
+        theta_max: 2.5
     SlowZone:
-      type: polygon
-      # Shrunk 2026-11-10 alongside StopZone above -- margin reduced from
-      # 0.50m front/back, 0.345m side down to 0.30m front/back, 0.20m side.
-      # Kept meaningfully larger than StopZone's new margin (0.30m vs 0.15m
-      # front/back) so there's still a deceleration buffer before a hard
-      # stop, just not wide enough to trigger on tight-corner proximity.
-      points: "[[-0.65, -0.355], [-0.65, 0.355], [0.65, 0.355], [0.65, -0.355]]"
+      type: velocity_polygon
       action_type: slowdown
-      slowdown_ratio: 0.5
+      # Raised from 0.50 (2026-11-12). The cut is applied upstream of
+      # collision_debounce's minimum-executable-speed filter, so a 50% cut
+      # turned MPPI's -0.564 m/s escape command into -0.144 -- below half of
+      # min_speed_reverse (0.40), which is the band collision_debounce zeroes
+      # rather than raises. At 0.70 the same command lands at -0.395, which
+      # the filter rounds up to the executable -0.40 instead. Braking margin
+      # is still provided by StopZone, which is unchanged in extent ahead.
+      slowdown_ratio: 0.7
       # Raised from the Nav2 default (4, i.e. the legacy max_points: 3) --
       # confirmed via bag analysis that a real wall sitting near this
       # polygon's edge was triggering on ordinary per-scan point-count noise
-      # at the old threshold (2026-11-09).
+      # at the old threshold (2026-11-09). The `max_points: 6` that used to
+      # sit beside this is gone: it silently overrode min_points and happened
+      # to resolve to the same 7, so editing min_points would have done
+      # nothing (noted 2026-11-12).
       min_points: 7
-      max_points: 6
+      enabled: true
       visualize: true
       polygon_pub_topic: collision_monitor/slow_zone
+      holonomic: false
+      velocity_polygons: ["slow_forward", "slow_reverse"]
+      # Same split as StopZone, on the 2026-11-10 sizing: ±0.355 half-width,
+      # 0.65 m ahead of centre, trailing extent cut to 0.20 m.
+      slow_forward:
+        points: "[[-0.20, -0.355], [-0.20, 0.355], [0.65, 0.355], [0.65, -0.355]]"
+        linear_min: 0.0
+        linear_max: 1.2
+        theta_min: -2.5
+        theta_max: 2.5
+      slow_reverse:
+        points: "[[-0.65, -0.355], [-0.65, 0.355], [0.20, 0.355], [0.20, -0.355]]"
+        linear_min: -1.2
+        linear_max: 0.0
+        theta_min: -2.5
+        theta_max: 2.5
     observation_sources: ["scan"]
     scan:
       type: scan

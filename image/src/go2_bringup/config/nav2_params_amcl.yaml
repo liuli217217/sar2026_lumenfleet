@@ -266,26 +266,68 @@ collision_monitor:
     transform_tolerance: 0.2
     source_timeout: 1.0
     base_shift_correction: true
-    stop_pub_timeout: 2.0
+    # Raised from 2.0 (2026-11-12) -- see nav2_params_slam.yaml for the full
+    # reasoning. Short version: the monitor going silent on a held stop is
+    # indistinguishable downstream from the pipeline dying, and made a
+    # permanent lockup produce no log output at all.
+    stop_pub_timeout: 10.0
     polygons: ["StopZone", "SlowZone"]
+    # Direction-aware since 2026-11-12. A static `type: polygon` decides only
+    # on "is a scan point inside this box" and ignores which way the command
+    # would move the robot, so an obstacle inside StopZone zeroes the command
+    # that would back out of it -- a permanent trap, measured on the 12-goal
+    # benchmark (nine consecutive goals, 0.00 m travelled each). The geometry
+    # below is this file's own untouched sizing; only the trailing extent of
+    # each box is cut back so that reversing is judged against what is
+    # actually behind the robot. Lateral half-widths are unchanged.
+    #
+    # NOTE: the sizing here is the pre-2026-11-10 geometry and was never
+    # retuned alongside nav2_params_slam.yaml, nor is slowdown_ratio raised
+    # to 0.7 as it is there. These files are not on the tested path; if one
+    # is ever used, port those numbers across as well.
     StopZone:
-      type: polygon
-      # Slightly larger than robot body — stops robot before contact
-      # Flat double_array: x1,y1, x2,y2, x3,y3, x4,y4
-      points: "[[-0.55, -0.30], [-0.55, 0.30], [0.55, 0.30], [0.55, -0.30]]"
+      type: velocity_polygon
       action_type: stop
-      max_points: 3
+      min_points: 4           # was the deprecated `max_points: 3`
+      enabled: true
       visualize: true
       polygon_pub_topic: collision_monitor/stop_zone
+      holonomic: false
+      velocity_polygons: ["stop_forward", "stop_reverse"]
+      stop_forward:
+        points: "[[-0.15, -0.30], [-0.15, 0.30], [0.55, 0.30], [0.55, -0.30]]"
+        linear_min: 0.0
+        linear_max: 1.2
+        theta_min: -2.5
+        theta_max: 2.5
+      stop_reverse:
+        points: "[[-0.55, -0.30], [-0.55, 0.30], [0.15, 0.30], [0.15, -0.30]]"
+        linear_min: -1.2
+        linear_max: 0.0
+        theta_min: -2.5
+        theta_max: 2.5
     SlowZone:
-      type: polygon
-      # Outer ring — robot slows to 50% when obstacle enters here
-      points: "[[-0.80, -0.45], [-0.80, 0.45], [0.80, 0.45], [0.80, -0.45]]"
+      type: velocity_polygon
       action_type: slowdown
       slowdown_ratio: 0.5
-      max_points: 3
+      min_points: 4           # was the deprecated `max_points: 3`
+      enabled: true
       visualize: true
       polygon_pub_topic: collision_monitor/slow_zone
+      holonomic: false
+      velocity_polygons: ["slow_forward", "slow_reverse"]
+      slow_forward:
+        points: "[[-0.20, -0.45], [-0.20, 0.45], [0.80, 0.45], [0.80, -0.45]]"
+        linear_min: 0.0
+        linear_max: 1.2
+        theta_min: -2.5
+        theta_max: 2.5
+      slow_reverse:
+        points: "[[-0.80, -0.45], [-0.80, 0.45], [0.20, 0.45], [0.20, -0.45]]"
+        linear_min: -1.2
+        linear_max: 0.0
+        theta_min: -2.5
+        theta_max: 2.5
     observation_sources: ["scan"]
     scan:
       type: scan
