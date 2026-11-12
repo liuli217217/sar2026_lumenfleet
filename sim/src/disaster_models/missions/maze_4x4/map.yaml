@@ -1,0 +1,8 @@
+# Prior map of the maze (walls only; obstacles and victims are not in it).
+# ROS map_server format. World frame = Go2 start pose.
+image: map.png
+resolution: 0.05
+origin: [-0.850, -3.650, 0.0]   # world (x, y, yaw) of the lower-left pixel
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196
