@@ -7,7 +7,9 @@ ENV ROS_DOMAIN_ID=0
 SHELL ["/bin/bash", "-c"]
 
 # Build tools, diagnostic dependencies, and recording/playback tools.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Check-Date=false tolerates a host clock running behind the archive's Release
+# timestamps; drop it once the host clock is NTP-synced.
+RUN apt-get update -o Acquire::Check-Date=false -o Acquire::Retries=5 && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
     python3-colcon-common-extensions \
     python3-numpy \
     python3-yaml \
@@ -41,7 +43,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-jazzy-rviz2 \
     ros-jazzy-rtabmap-slam \
     ros-jazzy-rtabmap-viz \
+    ros-jazzy-vision-msgs \
+    ros-jazzy-realsense2-camera \
+    python3-scipy \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
+
+# YOLOv8n for the SAR person detector runs on the CPU through onnxruntime
+# (~0.15-0.2 s per frame on the Orin; the detector runs at 4 Hz).
+RUN pip3 install --no-cache-dir --break-system-packages onnxruntime==1.20.1
 
 WORKDIR /opt/lumen_ws
 
@@ -64,6 +74,18 @@ COPY src/go2_rviz/ src/go2_rviz/
 COPY src/go2_bringup/ src/go2_bringup/
 COPY src/explore_lite/ src/explore_lite/
 
+# Search and rescue missions (merged from SMC_SAR_Phase2): the known-map
+# navigator, the no-map explorer, the reactive explorer, the YOLO person
+# detector, and the Go2 sport-API bridge they drive the robot through.
+COPY src/go2_sar_core/ src/go2_sar_core/
+COPY src/go2_sar_scout/ src/go2_sar_scout/
+COPY src/go2_sar_reflex/ src/go2_sar_reflex/
+# go2_sar_prior and go2_sar_slam belong here too; they are not in this branch
+# yet, and a COPY of a path that does not exist fails the build.
+# go2_sar_referee is deliberately absent: it reads Gazebo ground truth
+# and has no business on the robot.
+COPY src/go2_real_bridge/ src/go2_real_bridge/
+
 RUN source /opt/ros/jazzy/setup.bash \
     && colcon build \
         --merge-install \
@@ -72,7 +94,13 @@ RUN source /opt/ros/jazzy/setup.bash \
             lumen_sensor_tests go2_cmd_vel_bridge \
             go2_description go2_driver go2_camera_bridge go2_rviz \
             go2_bringup explore_lite \
+            go2_sar_core go2_sar_scout go2_sar_reflex go2_real_bridge \
     && rm -rf build log
+
+# Known-map mission data (prior wall map + estimated victim positions). The SAR
+# launch files look for it at /missions/<field>, same path as in the
+# SMC_SAR_Phase2 image it came from.
+COPY missions/ /missions/
 
 # Standalone trial scripts (not a colcon package); run directly with python3,
 # e.g. `python3 /validation/move_distance.py --live ...`.
