@@ -14,6 +14,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     rviz = LaunchConfiguration('rviz')
     driver = LaunchConfiguration('driver')
+    retime_utlidar = LaunchConfiguration('retime_utlidar')
     camera = LaunchConfiguration('camera')
     camera_interface = LaunchConfiguration('camera_interface')
     camera_tf = LaunchConfiguration('camera_tf')
@@ -34,6 +35,15 @@ def generate_launch_description():
         default_value='True',
         description='Launch go2_driver. Set false when /utlidar/* is already published '
                     'by the robot, so only one stack can command it'
+    )
+    declare_retime_utlidar_cmd = DeclareLaunchArgument(
+        'retime_utlidar',
+        default_value='True',
+        description='Launch retime_utlidar.py. Set false when go2_mapping_pipeline.launch.py '
+                    '(or anything else that starts its own retime_utlidar node) is also '
+                    'running -- unlike driver/camera/camera_tf, this node was previously '
+                    'unconditional, so running both launch files together silently started '
+                    'two retime_utlidar nodes publishing the same retimed odom topic'
     )
     declare_camera_cmd = DeclareLaunchArgument(
         'camera',
@@ -111,7 +121,8 @@ def generate_launch_description():
         package='go2_bringup',
         executable='retime_utlidar.py',
         name='retime_utlidar',
-        output='screen'
+        output='screen',
+        condition=IfCondition(retime_utlidar)
     )
 
     camera_cmd = Node(
@@ -161,6 +172,7 @@ def generate_launch_description():
     ld = LaunchDescription()
     ld.add_action(declare_rviz_cmd)
     ld.add_action(declare_driver_cmd)
+    ld.add_action(declare_retime_utlidar_cmd)
     ld.add_action(declare_camera_cmd)
     ld.add_action(declare_camera_interface_cmd)
     ld.add_action(declare_camera_tf_cmd)

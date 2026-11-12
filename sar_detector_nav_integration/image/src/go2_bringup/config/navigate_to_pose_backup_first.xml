@@ -1,17 +1,25 @@
 <!--
   Nav2's stock navigate_to_pose_w_replanning_and_recovery.xml (Jazzy), with
-  one change: BackUp is promoted ahead of Spin and Wait in the RecoveryActions
-  RoundRobin (2026-11-09).
+  one change: BackUp is promoted ahead of Wait in the RecoveryActions
+  RoundRobin, but now AFTER Spin (reverted 2026-11-11, see below).
 
-  Stock order was ClearingActions -> Spin -> Wait -> BackUp. RoundRobin
-  advances to the next child on each successive recovery trigger, so Spin
-  (needs clearance on every side) was always tried before BackUp (only needs
-  clearance behind the robot), backwards for a robot stuck in a space tight
-  enough that no heading clears an in-place rotation, but straight-line
-  retreat is still possible. Confirmed via live testing: the robot can latch
-  in collision_debounce's STOP state for 9+ seconds in exactly this kind of
-  spot, and Spin's own prior failure ("Exceeded time allowance before
-  reaching the Spin goal") wastes a cycle before BackUp is ever attempted.
+  2026-11-09: BackUp was promoted ahead of BOTH Spin and Wait, reasoning
+  that a robot stuck in a space tight enough that no heading clears an
+  in-place rotation could still retreat in a straight line. Confirmed via
+  live testing that day: the robot could latch in collision_debounce's
+  STOP state for 9+ seconds in exactly this kind of spot, with Spin's own
+  prior failure wasting a cycle before BackUp was ever attempted.
+
+  2026-11-11: reverted BackUp back behind Spin, based on further live
+  testing: reversing turned out to be the riskier behavior in practice
+  (backing into something not checked ahead of time, since the robot
+  never looks behind itself before retreating), not rotating. Most
+  dead-ends encountered are a flat wall or corner with open space to the
+  sides/behind, which rotation handles fine; only a true tight pocket
+  blocks rotation, and that's now accepted as the rarer case BackUp
+  covers instead of the default first response. This also matches
+  hybrid_explorer.py's own recovery ladder (2026-11-11), which now tries
+  a pure in-place rotation before falling back to a backward retreat.
 
   No other change from the stock file, same RecoveryNode retry budget (6),
   same ComputePathToPose/FollowPath recovery subtrees, same costmap-clearing
@@ -52,8 +60,14 @@
               <ClearEntireCostmap name="ClearLocalCostmap-Subtree" service_name="local_costmap/clear_entirely_local_costmap"/>
               <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
             </Sequence>
-            <BackUp backup_dist="0.30" backup_speed="0.15" error_code_id="{backup_code_id}"/>
             <Spin spin_dist="1.57" error_code_id="{spin_error_code}"/>
+            <!-- backup_speed raised 0.15->0.50 (2026-11-11): 0.15 m/s sits
+                 below collision_debounce's 0.4 m/s linear deadband, so this
+                 BT-internal recovery action was silently commanding zero
+                 regardless of how often it fired. Confirmed via Codex
+                 review of this file alongside the diagnostic handoff at
+                 docs/DIAGNOSTIC_STUCK_NEAR_OBSTACLES_NO_RECOVERY_2026-11-11.md. -->
+            <BackUp backup_dist="0.30" backup_speed="0.50" error_code_id="{backup_code_id}"/>
             <Wait wait_duration="5.0"/>
           </RoundRobin>
         </ReactiveFallback>

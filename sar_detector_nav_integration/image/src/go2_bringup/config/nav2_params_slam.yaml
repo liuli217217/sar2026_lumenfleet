@@ -67,13 +67,19 @@ controller_server:
       vx_std: 0.15
       vy_std: 0.15
       wz_std: 0.3
-      vx_max: 0.40
-      vx_min: -0.15
+      # Raised 2026-11-10: these are MPPI's own velocity ceilings, separate
+      # from go2_cmd_vel_bridge's max_vx/vy/wz (and lower than them, so MPPI
+      # was the actual binding constraint the whole time). Sized so the
+      # commanded speed still clears the robot's confirmed-smooth threshold
+      # even after SlowZone's 50% cut -- measured live via velocity_pulse.py
+      # and keyboard teleop: forward 0.3 min/0.4 smooth, reverse ~0.4 min/0.5
+      # smooth, rotation 0.6 min/0.9+ smooth. Old vx_max=0.40 -> 0.20 after
+      # SlowZone, below even the bare forward minimum; old wz_max=0.90 -> 0.45
+      # after SlowZone, below the rotation minimum too.
+      vx_max: 0.8
+      vx_min: -1.0
       vy_max: 0.25
-      wz_max: 0.90
-      min_x_velocity_threshold: 0.05
-      min_y_velocity_threshold: 0.05
-      min_theta_velocity_threshold: 0.1
+      wz_max: 1.8
       iteration_count: 1
       prune_distance: 1.7
       transform_tolerance: 0.1
@@ -106,7 +112,11 @@ controller_server:
         cost_power: 1
         cost_weight: 3.81
         critical_cost: 300.0
-        consider_footprint: false
+        # Enabled 2026-11-10, paired with the real rectangular footprint
+        # replacing robot_radius in both costmaps -- lets MPPI score
+        # trajectories against the robot's actual oriented shape instead of
+        # a worst-case circle.
+        consider_footprint: true
         collision_cost: 1000000.0
         near_goal_smoothing_distance: 0.5 #1.5
       PathAlignCritic:
@@ -143,8 +153,14 @@ local_costmap:
       width: 6
       height: 6
       resolution: 0.05
-      # Circumradius of 0.70m x 0.35m body ≈ 0.39m, padded to 0.40m
-      robot_radius: 0.4
+      # Real rectangular body (2026-11-10), replacing the robot_radius: 0.4
+      # circle -- that treated every direction as if the robot were as wide
+      # as its 0.70m length, including its actual narrow 0.31m width,
+      # blocking passages the real body could fit through at the right
+      # orientation. Paired with CostCritic.consider_footprint: true below
+      # so MPPI actually reasons about heading near obstacles, not just a
+      # worst-case circle.
+      footprint: "[[-0.35, -0.155], [-0.35, 0.155], [0.35, 0.155], [0.35, -0.155]]"
       update_frequency: 5.0
       publish_frequency: 2.0
       transform_tolerance: 0.3
@@ -166,12 +182,19 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        # Lowered from 0.40 (2026-11-09): robot_radius 0.4 + inflation_radius
-        # 0.4 required 1.6m of clearance on each side just to be plannable,
-        # far too conservative for the narrow spaces/small rooms this robot
-        # actually needs to navigate in competition. 0.15 brings the total
-        # lethal+inflated boundary to 0.55m from an obstacle surface.
-        inflation_radius: 0.15
+        # 0.15 (2026-11-09) kept the lethal+inflated boundary narrow enough
+        # for small rooms/narrow passages, but after switching robot_radius
+        # to a real rectangular footprint, 0.15 is below the footprint's own
+        # inscribed radius (~0.165m, the largest circle fitting entirely
+        # inside it) -- Nav2 itself warns this leaves a thin margin right at
+        # the robot's narrow sides where the cost gradient hasn't fully
+        # ramped to lethal. 0.20 clears that with real margin while staying
+        # well short of the circumscribed radius (~0.40m) that would fully
+        # restore MPPI's fast circular-prefilter optimization -- accepting
+        # the extra per-cycle CPU cost of full-footprint checking in trade
+        # for keeping narrow-passage navigation, confirmed as a real need
+        # tonight (2026-11-10).
+        inflation_radius: 0.20
 
 global_costmap:
   global_costmap:
@@ -179,7 +202,8 @@ global_costmap:
       use_sim_time: false
       robot_base_frame: base_link
       global_frame: map
-      robot_radius: 0.4
+      # Real rectangular body, see local_costmap's footprint comment above.
+      footprint: "[[-0.35, -0.155], [-0.35, 0.155], [0.35, 0.155], [0.35, -0.155]]"
       resolution: 0.05
       track_unknown_space: true
       update_frequency: 1.0
@@ -220,12 +244,19 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        # Lowered from 0.40 (2026-11-09): robot_radius 0.4 + inflation_radius
-        # 0.4 required 1.6m of clearance on each side just to be plannable,
-        # far too conservative for the narrow spaces/small rooms this robot
-        # actually needs to navigate in competition. 0.15 brings the total
-        # lethal+inflated boundary to 0.55m from an obstacle surface.
-        inflation_radius: 0.15
+        # 0.15 (2026-11-09) kept the lethal+inflated boundary narrow enough
+        # for small rooms/narrow passages, but after switching robot_radius
+        # to a real rectangular footprint, 0.15 is below the footprint's own
+        # inscribed radius (~0.165m, the largest circle fitting entirely
+        # inside it) -- Nav2 itself warns this leaves a thin margin right at
+        # the robot's narrow sides where the cost gradient hasn't fully
+        # ramped to lethal. 0.20 clears that with real margin while staying
+        # well short of the circumscribed radius (~0.40m) that would fully
+        # restore MPPI's fast circular-prefilter optimization -- accepting
+        # the extra per-cycle CPU cost of full-footprint checking in trade
+        # for keeping narrow-passage navigation, confirmed as a real need
+        # tonight (2026-11-10).
+        inflation_radius: 0.20
 
 planner_server:
   ros__parameters:
@@ -279,8 +310,27 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: false
     feedback: "OPEN_LOOP"
-    max_velocity: [0.40, 0.25, 0.80]    # [vx, vy, wz] — hard caps
-    min_velocity: [-0.15, -0.25, -0.80]
+    # Raised 2026-11-11: these caps were never updated when MPPI's own
+    # vx_max/vx_min/wz_max and the bridge's caps were raised (2026-11-10)
+    # -- this node sits between controller_server and collision_monitor in
+    # the pipeline (cmd_vel_nav -> velocity_smoother -> cmd_vel_smoothed),
+    # so it was silently re-clamping every command back down to the old
+    # numbers regardless of what MPPI/the bridge allowed. Combined with
+    # SlowZone's 50% cut and collision_debounce's 0.4/0.6 deadband, the old
+    # caps floored every axis to exactly zero whenever the robot was in/near
+    # SlowZone: forward 0.40*0.5=0.20 (<0.4 deadband), reverse
+    # -0.15*0.5=-0.075 (<<0.4), lateral 0.25*0.5=0.125 (<<0.4), rotation
+    # 0.80*0.5=0.40 (<0.6 angular deadband) -- a deterministic command-
+    # blocking condition, not just "MPPI might choose a low speed."
+    # Confirmed via Codex review of this source + the diagnostic handoff
+    # at docs/DIAGNOSTIC_STUCK_NEAR_OBSTACLES_NO_RECOVERY_2026-11-11.md.
+    # Now matches MPPI's own ceilings (vx_max=0.8/vx_min=-1.0/wz_max=1.8);
+    # vy is raised generously too even though MPPI's vy_max=0.25 remains
+    # the real lateral ceiling and itself still sits below deadband_linear
+    # (0.25 < 0.4) -- lateral motion clearing the deadband is a separate,
+    # still-open gap, not fixed by this change alone.
+    max_velocity: [0.80, 0.80, 1.80]    # [vx, vy, wz] — hard caps
+    min_velocity: [-1.00, -0.80, -1.80]
     max_accel:  [0.4, 0.4, 0.8]
     max_decel: [-0.4, -0.4, -0.8]
     odom_topic: /utlidar/robot_odom_retimed
@@ -289,9 +339,37 @@ velocity_smoother:
     velocity_timeout: 1.0
 
 # ── Safety: collision_monitor ─────────────────────────────────────────────────
-# StopZone  — immediately halts the robot if any scan point enters the polygon
-# SlowZone  — halves velocity when a scan point enters the outer polygon
-# Both zones are visualised in RViz for debugging
+# StopZone  — halts the robot before it drives into something
+# SlowZone  — cuts velocity when a scan point enters the outer polygon
+# Both zones are visualised in RViz for debugging.
+#
+# Both are DIRECTION-AWARE since 2026-11-12 (type: velocity_polygon). They
+# used to be static `type: polygon`, which decides purely on "is a scan point
+# inside this box", with no regard for which way the command would move the
+# robot. That is a one-way trap: once the obstacle is inside StopZone, EVERY
+# command is zeroed, including the one that would back out of it. Measured on
+# the 12-goal benchmark (PERF_clean/PERF_drift, 2026-11-12): the robot parked
+# at 0.379 m from a pillar -- inside StopZone's 0.50 m half-length -- and
+# never moved again. Goals 3 through 11 each travelled exactly 0.00 m, and
+# both recovery behaviours failed 10/10 because their escape commands were
+# zeroed by the same polygon: MPPI asked for -0.564 m/s of reverse, the
+# monitor's output was -0.144, and what finally reached the robot was 0.0.
+# Success rate 2/12.
+#
+# velocity_polygon selects one of several sub-polygons from the COMMANDED
+# velocity, so the active stop box covers the direction being travelled.
+# Forward commands are still stopped by an obstacle ahead; reverse commands
+# are judged against what is behind. The lateral half-width is unchanged in
+# every sub-polygon -- only the x extent is split -- so side protection is
+# exactly as before. Each sub-polygon keeps a 0.15 m margin on its trailing
+# side, so "escaping" can never mean shearing into something immediately
+# behind.
+#
+# The sub-polygon velocity ranges MUST cover every velocity the pipeline can
+# emit (velocity_smoother caps: vx in [-1.0, 0.8], wz in [-1.8, 1.8]), with
+# margin. If a command matches no sub-polygon the node logs "Velocity is not
+# covered by any of the velocity polygons" and KEEPS THE PREVIOUS POLYGON --
+# a silent, stale-geometry failure. Grep the startup log for that string.
 collision_monitor:
   ros__parameters:
     use_sim_time: false
@@ -303,41 +381,87 @@ collision_monitor:
     transform_tolerance: 0.2
     source_timeout: 1.0
     base_shift_correction: true
-    stop_pub_timeout: 2.0
+    # Raised from 2.0 (2026-11-12). collision_monitor stops publishing
+    # cmd_vel_out entirely after this long of continuous zero output. That is
+    # the right behaviour when something else may want the topic, but nothing
+    # else publishes cmd_vel_raw in this stack, and the silence made an
+    # enforced stop indistinguishable from a dead pipeline: collision_debounce
+    # saw its input go stale, latched its own fail-safe stop, and the whole
+    # condition went silent -- 9447 zero commands and not one log line. Keeping
+    # the monitor talking keeps the state observable downstream. See the
+    # matching watchdog fix in collision_debounce.py.
+    stop_pub_timeout: 10.0
     polygons: ["StopZone", "SlowZone"]
     StopZone:
-      type: polygon
-      # Sized against inflation_radius 0.15 (2026-11-09, see inflation_layer
-      # above): robot_radius 0.4 + inflation_radius 0.15 = 0.55m
-      # lethal/inflated extent from an obstacle surface. This clears that
-      # boundary with a small margin, so the robot never stands somewhere
-      # StopZone permits but the costmap's own inflation makes unplannable
-      # (the deadlock that caused "Failed to create plan" on every retry,
-      # even after a full costmap clear) -- while staying close to the
-      # original ±0.55/±0.30 size so the zone still fits inside small rooms,
-      # unlike the earlier ±0.85/±0.50 attempt (paired with inflation_radius
-      # 0.4) which didn't.
-      # Flat double_array: x1,y1, x2,y2, x3,y3, x4,y4
-      points: "[[-0.60, -0.35], [-0.60, 0.35], [0.60, 0.35], [0.60, -0.35]]"
+      type: velocity_polygon
       action_type: stop
-      max_points: 3
+      # Was the deprecated `max_points: 3` (Nav2 reads that as min_points 4).
+      # Stated directly now -- see also SlowZone, where max_points was
+      # silently overriding an explicit min_points.
+      min_points: 4
+      enabled: true
       visualize: true
       polygon_pub_topic: collision_monitor/stop_zone
+      # false: sub-polygons are selected on signed vx. The Go2 is configured
+      # Omni, but MPPI's vy_max is 0.25 and strafing is rare; a pure strafe
+      # falls into stop_forward, whose lateral half-width is the same 0.275,
+      # so sideways protection is identical either way.
+      holonomic: false
+      velocity_polygons: ["stop_forward", "stop_reverse"]
+      # Geometry below preserves the 2026-11-10 sizing: ±0.275 half-width
+      # (0.12 m side margin on the 0.70x0.31 m footprint) and 0.50 m ahead of
+      # centre (0.15 m front margin). Only the trailing extent is cut back,
+      # from 0.50 m to 0.15 m, which is what makes backing out possible.
+      stop_forward:
+        points: "[[-0.15, -0.275], [-0.15, 0.275], [0.50, 0.275], [0.50, -0.275]]"
+        linear_min: 0.0
+        linear_max: 1.2
+        theta_min: -2.5
+        theta_max: 2.5
+      stop_reverse:
+        points: "[[-0.50, -0.275], [-0.50, 0.275], [0.15, 0.275], [0.15, -0.275]]"
+        linear_min: -1.2
+        linear_max: 0.0
+        theta_min: -2.5
+        theta_max: 2.5
     SlowZone:
-      type: polygon
-      # Sized to stay strictly outside the new StopZone boundary above
-      # (2026-11-09), close to the original ±0.80/±0.45.
-      points: "[[-0.85, -0.50], [-0.85, 0.50], [0.85, 0.50], [0.85, -0.50]]"
+      type: velocity_polygon
       action_type: slowdown
-      slowdown_ratio: 0.5
+      # Raised from 0.50 (2026-11-12). The cut is applied upstream of
+      # collision_debounce's minimum-executable-speed filter, so a 50% cut
+      # turned MPPI's -0.564 m/s escape command into -0.144 -- below half of
+      # min_speed_reverse (0.40), which is the band collision_debounce zeroes
+      # rather than raises. At 0.70 the same command lands at -0.395, which
+      # the filter rounds up to the executable -0.40 instead. Braking margin
+      # is still provided by StopZone, which is unchanged in extent ahead.
+      slowdown_ratio: 0.7
       # Raised from the Nav2 default (4, i.e. the legacy max_points: 3) --
       # confirmed via bag analysis that a real wall sitting near this
       # polygon's edge was triggering on ordinary per-scan point-count noise
-      # at the old threshold (2026-11-09).
+      # at the old threshold (2026-11-09). The `max_points: 6` that used to
+      # sit beside this is gone: it silently overrode min_points and happened
+      # to resolve to the same 7, so editing min_points would have done
+      # nothing (noted 2026-11-12).
       min_points: 7
-      max_points: 6
+      enabled: true
       visualize: true
       polygon_pub_topic: collision_monitor/slow_zone
+      holonomic: false
+      velocity_polygons: ["slow_forward", "slow_reverse"]
+      # Same split as StopZone, on the 2026-11-10 sizing: ±0.355 half-width,
+      # 0.65 m ahead of centre, trailing extent cut to 0.20 m.
+      slow_forward:
+        points: "[[-0.20, -0.355], [-0.20, 0.355], [0.65, 0.355], [0.65, -0.355]]"
+        linear_min: 0.0
+        linear_max: 1.2
+        theta_min: -2.5
+        theta_max: 2.5
+      slow_reverse:
+        points: "[[-0.65, -0.355], [-0.65, 0.355], [0.20, 0.355], [0.20, -0.355]]"
+        linear_min: -1.2
+        linear_max: 0.0
+        theta_min: -2.5
+        theta_max: 2.5
     observation_sources: ["scan"]
     scan:
       type: scan

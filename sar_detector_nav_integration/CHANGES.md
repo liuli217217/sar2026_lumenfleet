@@ -6,6 +6,36 @@
 
 原 image/ 逐文件复制，字节比较通过。未修改 Nav launch、导航参数、hybrid_explorer 和运动桥接。
 
+## 2026-11-12：`go2_bringup` 整包同步到仓库主树当前状态
+
+**做了什么**：把 `image/src/go2_bringup/` 整包从本仓库主树同步过来（31 个文件）。
+同步后主树与本副本 `diff -rq` 完全一致。
+
+**为什么**：基线 `ccefd8a` 之后主树的 `go2_bringup` 有十余个提交，其中两类是这个
+工作区的运动链路能不能动起来的前提：
+
+| 来源 | 内容 | 不带会怎样 |
+|---|---|---|
+| 主树（上游） | `collision_debounce` 的三次修复：死区下调、低速指令抬到最小值而非清零、chatter 闭锁封顶 | 真机实测：`/cmd_vel` 恒为零而 `/cmd_vel_raw` 全程有可用指令 |
+| 主树（本 PR 前一个提交） | StopZone/SlowZone 改方向感知的 `velocity_polygon` | 贴近障碍进入停止区后再也出不来，12 目标只成功 2 个 |
+
+只摘其中一两个修复叠到旧基线上，会得到一套从未存在、也从未测过的 Nav2 配置
+（旧基线的足迹、`inflation_radius`、MPPI 速度上限、`velocity_smoother` 上限都还是老值，
+而这些修复的数值正是按新值调的）。所以整包同步，而不是摘樱桃。
+
+**尚未验证**：本工作区**整体**仍未在 Docker/DDS/真实 Nav2 下跑过
+（见 `RESCUE_WORKFLOW.md` 开头）。同步只保证运动链路不再自锁，不代表闭环能跑通。
+
+## 2026-11-12：新增两个节点（纯加法，不改状态机）
+
+| 文件 | 作用 |
+|---|---|
+| `sar_rescue_manager/referee_adapter.py` | 把 rescue_manager 的 ledger 翻译成 `mission_monitor` 计分用的 `/sar/events`（`MISSION_START` / `SIT`）。只订阅，发不了目标、速度或服务调用 |
+| `sar_rescue_manager/real_rescue.py` | 真的坐下：`StopMove → Sit → RiseSit`，和两个 reactive 方案同一套姿态变化。`mock_rescue` 只回「完成」，不做任何姿态变化 |
+| `sar_rescue_manager/sport_api_shim.py` | 三个 sport 协议常量的本地副本，避免为发三个整数把整个 `go2_real_bridge` 拖进构建 |
+
+`rescue_manager` 的状态机**一行未改**。
+
 ## 重命名 detector 副本中的修改
 
 ### `image/src/victim_detector_integrated/package.xml`

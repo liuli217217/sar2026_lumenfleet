@@ -79,6 +79,46 @@ def generate_launch_description():
             'approx_sync_max_interval': 0.1,
             'database_path': LaunchConfiguration('database_path'),
             'Mem/IncrementalMemory': ParameterValue(LaunchConfiguration('mem_incremental'), value_type=str),
+            # Grid/* occupancy-grid tuning ported 2026-11-11 from
+            # go2_mapping.launch.py / go2_navigation.launch.py (the lidar/
+            # scan_cloud variants) -- this file had none of it, running
+            # RTAB-Map's bare defaults, the direct cause of noisy
+            # "occupied" blobs in /map false-blocking real doorways (live
+            # observation, same session). Only the grid-generation params
+            # are ported, not Reg/Strategy or Icp/* -- those are specific
+            # to the lidar/scan_cloud registration pipeline, not this
+            # RGB-D variant's.
+            #
+            # 2026-11-12: confirmed live on the robot that this port never
+            # actually took effect -- RTAB-Map had been running on bare
+            # defaults in production. Also, the height bands below were
+            # never correctly anchored to this robot's actual geometry in
+            # frame_id (base_link): a recorded bag showed the real floor
+            # sits at z ~= -0.288m in base_link, not near 0 as the
+            # original -0.10/0.10/1.2 assumed, a plausible direct cause of
+            # phantom "occupied" blobs at real, open doorways. Shifted by
+            # -0.288 to preserve the original band width / height-above-
+            # floor while correctly centering on the measured floor -- see
+            # go2_mapping_pipeline.launch.py's matching comment for detail.
+            'Grid/3D': 'true',
+            'Grid/RangeMin': '0.3',
+            'Grid/RangeMax': '8.0',
+            'Grid/GroundIsObstacle': 'false',
+            'Grid/NormalsSegmentation': 'false',
+            'Grid/MinGroundHeight': '-0.39',
+            'Grid/MaxGroundHeight': '-0.19',
+            'Grid/MaxObstacleHeight': '0.91',
+            # The two params directly targeting noisy/isolated false-occupied
+            # cells: a cell only counts as an obstacle if it has at least
+            # NoiseFilteringMinNeighbors other occupied cells within
+            # NoiseFilteringRadius -- an isolated depth-noise speckle fails
+            # this and gets dropped instead of becoming a permanent "wall".
+            'Grid/NoiseFilteringRadius': '0.20',
+            'Grid/NoiseFilteringMinNeighbors': '5',
+            'Grid/FootprintLength': '0.70',
+            'Grid/FootprintWidth': '0.35',
+            'Grid/FootprintHeight': '0.25',
+            'Grid/RayTracing': 'true',
         }],
         remappings=[
             ('rgb/image', LaunchConfiguration('rgb_input')),

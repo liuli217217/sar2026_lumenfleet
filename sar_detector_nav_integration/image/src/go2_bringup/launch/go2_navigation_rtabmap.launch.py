@@ -205,6 +205,16 @@ def generate_launch_description():
             'max_vx': ParameterValue(LaunchConfiguration('bridge_max_vx'), value_type=float),
             'max_vy': ParameterValue(LaunchConfiguration('bridge_max_vy'), value_type=float),
             'max_wz': ParameterValue(LaunchConfiguration('bridge_max_wz'), value_type=float),
+            # NOT deadband_linear/deadband_angular (2026-11-10): the native
+            # workspace's go2_cmd_vel_bridge.cpp has that capability, but
+            # this Docker image's build is a different, divergent
+            # implementation (confirmed by diffing the two sources) that
+            # never declares those parameters at all -- passing them here
+            # was a silent no-op. The equivalent deadband is now enforced
+            # in collision_debounce.py instead (Python, hot-patchable,
+            # already runs just upstream of this bridge in the pipeline).
+            # Fixing it here properly would need the Docker image's C++
+            # source changed and rebuilt, not a launch-arg change.
             'cmd_timeout_s': 0.25,
         }]
     )

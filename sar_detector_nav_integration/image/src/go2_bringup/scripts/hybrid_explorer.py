@@ -92,6 +92,73 @@ class HybridExplorer(Node):
         self.min_commit_sec = self.declare_parameter('min_commit_sec', 1.5).value
         self.last_goal_sent_time = None
 
+        # _best_avoid_heading() returning None (every candidate heading
+        # blocked in the local costmap) previously had no fallback at all --
+        # confirmed live (2026-11-10): the robot sat with zero goal in
+        # flight, logging "no clear candidate heading" every 2s, for 36+
+        # seconds straight with no recovery attempt of any kind. backup_step
+        # sends a short retreat goal (same frame/orientation, so the
+        # controller is free to walk it in reverse rather than turning
+        # around) after the dead end has persisted for stuck_backup_sec,
+        # to open up new local costmap clearance before trying again.
+        self.stuck_backup_sec = self.declare_parameter('stuck_backup_sec', 3.0).value
+        self.backup_step = self.declare_parameter('backup_step', 0.4).value
+        self.no_heading_since = None
+
+        # Live testing 2026-11-11: BACKUP (reversing) turned out to be the
+        # riskier default response to a blocked heading, not rotation --
+        # the robot never looks behind itself before retreating, while most
+        # dead-ends are a flat wall/corner with clearance to the sides and
+        # behind that a pure in-place turn handles fine; only a true tight
+        # pocket blocks rotation too. Tried between _best_avoid_heading()
+        # (translate) failing and the BACKUP fallback: if a ring around the
+        # robot at rotation_clear_radius is clear in the local costmap, turn
+        # in place toward the best-scoring heading instead of retreating.
+        # Matches the same reorder applied to the BT's own RecoveryActions
+        # RoundRobin (navigate_to_pose_backup_first.xml).
+        self.rotation_clear_radius = self.declare_parameter('rotation_clear_radius', 0.40).value
+        self.rotation_check_angles_deg = self.declare_parameter(
+            'rotation_check_angles_deg', list(range(0, 360, 30))).value
+
+        # Independent of the no-clear-heading case above: confirmed live
+        # (2026-11-10), with consider_footprint enabled on MPPI, that
+        # _heading_blocked()'s simple box-sample check can call a heading
+        # "clear" while MPPI's more accurate, orientation-aware CostCritic
+        # disagrees and refuses to execute any trajectory that way -- MPPI
+        # converges on an effectively-zero-velocity "optimal" trajectory
+        # every cycle rather than failing loudly, so neither this node's own
+        # obstacle check nor Nav2's own progress-checker recovery (whose
+        # timer keeps getting reset by each fresh goal send) ever catches
+        # it. This tracks real position over time regardless of what the
+        # goal-sending logic currently believes, and forces the same BACKUP
+        # retreat if the robot hasn't actually moved in stuck_progress_sec.
+        self.stuck_progress_sec = self.declare_parameter('stuck_progress_sec', 3.0).value
+        self.stuck_progress_dist = self.declare_parameter('stuck_progress_dist', 0.08).value
+        # Flagged by Codex review (2026-11-11): the check below used to be
+        # translation-only (math.hypot(x,y)), so a legitimate in-place turn
+        # -- e.g. rotating onto a newly-picked AVOID heading -- counted as
+        # "no real movement" and could get cancelled by this watchdog before
+        # the turn even finished. stuck_progress_yaw_rad (~11 deg) lets a
+        # pure rotation count as progress too.
+        self.stuck_progress_yaw_rad = self.declare_parameter('stuck_progress_yaw_rad', 0.20).value
+        self.progress_anchor = None  # (x, y, yaw, ros_time) at last confirmed movement
+
+        # Confirmed live (2026-11-10): the progress watchdog above correctly
+        # detects and recovers from a genuine dead end (e.g. a corner), but
+        # _best_avoid_heading() has no memory -- it re-scores candidates
+        # fresh every time based on current unknown-space in /map, so a
+        # dead end that still looks attractive (unexplored) keeps getting
+        # picked again right after backing away from it, producing a stable
+        # approach/backup loop instead of genuinely exploring elsewhere.
+        # Whenever the watchdog confirms a target is unreachable, blacklist
+        # it for failed_blacklist_sec within failed_blacklist_radius, and
+        # exclude any candidate heading (AVOID or DRIVE) that would send
+        # the robot back near it.
+        self.failed_blacklist_radius = self.declare_parameter('failed_blacklist_radius', 0.6).value
+        self.failed_blacklist_sec = self.declare_parameter('failed_blacklist_sec', 60.0).value
+        self.failed_targets = []  # [(x, y, ros_time), ...]
+        self.current_goal_xy = None  # (x, y) of whatever goal is currently in flight
+
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
@@ -186,6 +253,52 @@ class HybridExplorer(Node):
                 break
         return score
 
+    def _prune_blacklist(self, now):
+        self.failed_targets = [
+            (x, y, t) for (x, y, t) in self.failed_targets
+            if (now - t).nanoseconds / 1e9 < self.failed_blacklist_sec
+        ]
+
+    def _is_blacklisted(self, x, y):
+        now = self.get_clock().now()
+        self._prune_blacklist(now)
+        return any(
+            math.hypot(x - bx, y - by) < self.failed_blacklist_radius
+            for bx, by, _ in self.failed_targets
+        )
+
+    def _blacklist_current_goal(self):
+        if self.current_goal_xy is None:
+            return
+        bx, by = self.current_goal_xy
+        self.failed_targets.append((bx, by, self.get_clock().now()))
+        self.get_logger().warn(
+            f'Blacklisting unreachable target ({bx:.2f}, {by:.2f}) for '
+            f'{self.failed_blacklist_sec:.0f}s')
+
+    def _backup_target(self, mx, my, myaw):
+        """Pick a retreat point behind the robot, skipping any that are
+        themselves blacklisted. Both BACKUP call sites used to compute this
+        purely from the current pose with no blacklist check -- since the
+        pose doesn't change while the robot is stuck, that formula produced
+        the exact same point every time, so the watchdog would blacklist a
+        target and then immediately resend a goal to that same blacklisted
+        point, forever. Confirmed live (2026-11-10): "Blacklisting
+        unreachable target (1.75, -0.01)" followed by "[BACKUP] sending
+        goal (1.75, -0.01, ...)" repeating for 90+ seconds straight."""
+        for deg in (0.0, 30.0, -30.0, 60.0, -60.0):
+            heading = myaw + math.pi + math.radians(deg)
+            gx = mx + self.backup_step * math.cos(heading)
+            gy = my + self.backup_step * math.sin(heading)
+            if not self._is_blacklisted(gx, gy):
+                return gx, gy
+        # Every nearby retreat point is already blacklisted -- step further
+        # back along the straight-behind heading instead of looping.
+        heading = myaw + math.pi
+        gx = mx + (self.backup_step * 2.0) * math.cos(heading)
+        gy = my + (self.backup_step * 2.0) * math.sin(heading)
+        return gx, gy
+
     def _best_avoid_heading(self):
         """Pick the candidate heading with the most unknown space, excluding
         any heading that is itself immediately blocked in the local costmap."""
@@ -202,6 +315,10 @@ class HybridExplorer(Node):
             offset = math.radians(deg)
             if self._heading_blocked(self.local_costmap, lx, ly, lyaw, offset):
                 continue
+            gx = mx + self.avoid_step * math.cos(myaw + offset)
+            gy = my + self.avoid_step * math.sin(myaw + offset)
+            if self._is_blacklisted(gx, gy):
+                continue
             score = self._score_heading(mx, my, myaw, offset)
             if best_score is None or score > best_score:
                 best_score, best_offset = score, offset
@@ -209,6 +326,34 @@ class HybridExplorer(Node):
         if best_offset is None:
             return None
         return mx, my, myaw + best_offset
+
+    def _rotation_clear(self, grid, rx, ry):
+        """True if a full ring around (rx, ry) at rotation_clear_radius is
+        free of lethal cost -- i.e. turning in place here, in ANY
+        direction, will not clip the footprint's swept circle against
+        something. Direction-independent, unlike _heading_blocked()."""
+        for deg in self.rotation_check_angles_deg:
+            a = math.radians(deg)
+            wx = rx + self.rotation_clear_radius * math.cos(a)
+            wy = ry + self.rotation_clear_radius * math.sin(a)
+            val = grid_value(grid, wx, wy)
+            if val is not None and val >= self.obstacle_threshold:
+                return False
+        return True
+
+    def _best_rotate_heading(self, mx, my, myaw):
+        """Like _best_avoid_heading(), but scores every candidate heading
+        regardless of forward clearance -- rotating doesn't translate, so
+        _heading_blocked()'s forward-box check doesn't apply. Only called
+        after _rotation_clear() already confirmed the swept turn itself is
+        safe."""
+        best_offset, best_score = None, None
+        for deg in self.candidate_headings_deg:
+            offset = math.radians(deg)
+            score = self._score_heading(mx, my, myaw, offset)
+            if best_score is None or score > best_score:
+                best_score, best_offset = score, offset
+        return best_offset
 
     def _send_goal(self, x, y, yaw, label):
         goal = NavigateToPose.Goal()
@@ -226,6 +371,7 @@ class HybridExplorer(Node):
         token = self.goal_token
         self.goal_in_flight = True
         self.last_goal_sent_time = self.get_clock().now()
+        self.current_goal_xy = (x, y)
         self.get_logger().info(f'[{label}] sending goal ({x:.2f}, {y:.2f}, yaw={math.degrees(yaw):.0f} deg)')
 
         send_future = self.nav_client.send_goal_async(goal)
@@ -258,6 +404,42 @@ class HybridExplorer(Node):
             self.goal_handle.cancel_goal_async()
             self.goal_handle = None
 
+    def _progress_watchdog_backup(self):
+        """True if a BACKUP was just sent because the robot hasn't actually
+        moved in stuck_progress_sec, regardless of what the goal-sending
+        logic currently believes about available headings. Runs every tick,
+        independent of _obstacle_ahead()/_best_avoid_heading()."""
+        pose = self._pose_in('map')
+        if pose is None:
+            return False
+        mx, my, myaw = pose
+        now = self.get_clock().now()
+
+        if self.progress_anchor is None:
+            self.progress_anchor = (mx, my, myaw, now)
+            return False
+
+        ax, ay, ayaw, at = self.progress_anchor
+        yaw_delta = math.atan2(math.sin(myaw - ayaw), math.cos(myaw - ayaw))
+        if (math.hypot(mx - ax, my - ay) >= self.stuck_progress_dist
+                or abs(yaw_delta) >= self.stuck_progress_yaw_rad):
+            self.progress_anchor = (mx, my, myaw, now)
+            return False
+
+        if (now - at).nanoseconds / 1e9 < self.stuck_progress_sec:
+            return False
+
+        self.get_logger().warn(
+            f'No real movement in {self.stuck_progress_sec:.1f}s despite an active goal -- '
+            'forcing a backup retreat')
+        self._blacklist_current_goal()
+        if self.goal_in_flight:
+            self._cancel_current_goal()
+        gx, gy = self._backup_target(mx, my, myaw)
+        self._send_goal(gx, gy, myaw, 'BACKUP')
+        self.progress_anchor = (mx, my, myaw, now)
+        return True
+
     def _tick(self):
         if self.local_costmap is None or self.global_map is None:
             missing = []
@@ -270,20 +452,60 @@ class HybridExplorer(Node):
                 throttle_duration_sec=3.0)
             return
 
+        if self._progress_watchdog_backup():
+            return
+
         committing = (
             self.goal_in_flight and self.last_goal_sent_time is not None and
             (self.get_clock().now() - self.last_goal_sent_time).nanoseconds / 1e9 < self.min_commit_sec
         )
 
-        if self._obstacle_ahead() and not committing:
+        # Straight ahead leads back into a confirmed dead end -> treat the
+        # same as an obstacle, so this routes into _best_avoid_heading()'s
+        # candidate search (which also respects the blacklist) instead of
+        # just idling until _obstacle_ahead() happens to notice something.
+        need_avoid = self._obstacle_ahead()
+        if not need_avoid and not self.goal_in_flight:
+            pose = self._pose_in('map')
+            if pose is not None:
+                mx0, my0, myaw0 = pose
+                gx0 = mx0 + self.forward_step * math.cos(myaw0)
+                gy0 = my0 + self.forward_step * math.sin(myaw0)
+                need_avoid = self._is_blacklisted(gx0, gy0)
+
+        if need_avoid and not committing:
             if self.goal_in_flight:
                 self.get_logger().info('Obstacle ahead -- cancelling current goal')
                 self._cancel_current_goal()
 
             result = self._best_avoid_heading()
             if result is None:
+                local_pose = self._pose_in(self.local_costmap.header.frame_id or 'odom')
+                map_pose = self._pose_in('map')
+                if local_pose is not None and map_pose is not None:
+                    lx, ly, _ = local_pose
+                    if self._rotation_clear(self.local_costmap, lx, ly):
+                        mx, my, myaw = map_pose
+                        best_offset = self._best_rotate_heading(mx, my, myaw)
+                        if best_offset is not None:
+                            self.no_heading_since = None
+                            self._send_goal(mx, my, myaw + best_offset, 'ROTATE')
+                            return
+                now = self.get_clock().now()
+                if self.no_heading_since is None:
+                    self.no_heading_since = now
+                stuck_for = (now - self.no_heading_since).nanoseconds / 1e9
+                if stuck_for >= self.stuck_backup_sec:
+                    pose = self._pose_in('map')
+                    if pose is not None:
+                        mx, my, myaw = pose
+                        gx, gy = self._backup_target(mx, my, myaw)
+                        self._send_goal(gx, gy, myaw, 'BACKUP')
+                        self.no_heading_since = None
+                        return
                 self.get_logger().warn('Obstacle ahead but no clear candidate heading -- waiting', throttle_duration_sec=2.0)
                 return
+            self.no_heading_since = None
             mx, my, new_yaw = result
             gx = mx + self.avoid_step * math.cos(new_yaw)
             gy = my + self.avoid_step * math.sin(new_yaw)
