@@ -88,14 +88,26 @@ def generate_launch_description():
             # are ported, not Reg/Strategy or Icp/* -- those are specific
             # to the lidar/scan_cloud registration pipeline, not this
             # RGB-D variant's.
+            #
+            # 2026-11-12: confirmed live on the robot that this port never
+            # actually took effect -- RTAB-Map had been running on bare
+            # defaults in production. Also, the height bands below were
+            # never correctly anchored to this robot's actual geometry in
+            # frame_id (base_link): a recorded bag showed the real floor
+            # sits at z ~= -0.288m in base_link, not near 0 as the
+            # original -0.10/0.10/1.2 assumed, a plausible direct cause of
+            # phantom "occupied" blobs at real, open doorways. Shifted by
+            # -0.288 to preserve the original band width / height-above-
+            # floor while correctly centering on the measured floor -- see
+            # go2_mapping_pipeline.launch.py's matching comment for detail.
             'Grid/3D': 'true',
             'Grid/RangeMin': '0.3',
             'Grid/RangeMax': '8.0',
             'Grid/GroundIsObstacle': 'false',
             'Grid/NormalsSegmentation': 'false',
-            'Grid/MinGroundHeight': '-0.10',
-            'Grid/MaxGroundHeight': '0.10',
-            'Grid/MaxObstacleHeight': '1.2',
+            'Grid/MinGroundHeight': '-0.39',
+            'Grid/MaxGroundHeight': '-0.19',
+            'Grid/MaxObstacleHeight': '0.91',
             # The two params directly targeting noisy/isolated false-occupied
             # cells: a cell only counts as an obstacle if it has at least
             # NoiseFilteringMinNeighbors other occupied cells within
