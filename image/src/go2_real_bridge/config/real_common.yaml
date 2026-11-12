@@ -1,0 +1,48 @@
+# Real Unitree Go2: bridge + YOLO, used by both missions (real_sar.launch.py).
+go2_bridge:
+  ros__parameters:
+    # State sources. /sportmodestate was this project's only assumption; it was never
+    # observed on the competition robot. sar2026_lumenfleet measured these on robot
+    # `seek` (2026-10-26) and its own driver uses them instead:
+    #     /utlidar/robot_odom  nav_msgs/Odometry, ~150 Hz   -> odom_in
+    #     /lowstate            unitree_go/LowState (imu_state) -> lowstate_in
+    # Keep state_topic as a fallback: whichever source is set wins per output, and the
+    # bridge logs which one feeds odom_out / imu_out at startup. Run check_sensors first
+    # and set only the topics this robot actually publishes.
+    state_topic: /sportmodestate
+    odom_in: /utlidar/robot_odom
+    imu_in: ''
+    lowstate_in: /lowstate
+    request_topic: /api/sport/request
+    # /utlidar/cloud_base is firmware-transformed into base_link; /utlidar/cloud is the
+    # raw sensor-frame cloud. cloud_base is the default because it removes the L1 mount
+    # extrinsics (the project's least verifiable parameter) from the chain -- see the
+    # lidar_xyz note in real_nomap.yaml. Both were observed on `seek`.
+    cloud_in: /utlidar/cloud_base
+    cloud_out: /go2/cloud
+    odom_out: /go2/odom
+    imu_out: /go2/imu
+    cmd_vel_in: /sar/cmd_vel
+    body_pose_in: /sar/body_pose
+    estop_topic: /sar/estop
+    # enable_motion: set by the launch argument (default false = dry run)
+    max_vx: 0.5
+    max_vy: 0.3
+    max_wz: 0.8
+    cmd_timeout: 0.5
+    move_rate: 20.0
+    sit_threshold: -0.04
+    rise_settle: 3.0
+    stand_up_on_start: false
+
+person_detector:
+  ros__parameters:
+    image_topic: /camera/camera/color/image_raw   # realsense-ros 4.x (namespace camera, name camera)
+    confidence_threshold: 0.25
+    iou_threshold: 0.45
+    detection_rate_hz: 4.0
+    num_threads: 4
+    enable_topic: /sar/detector_enable
+    publish_debug_image: true
+    save_detections_dir: ''
+    # start_enabled: set by the launch (no map: always on; known map: on near a victim)
