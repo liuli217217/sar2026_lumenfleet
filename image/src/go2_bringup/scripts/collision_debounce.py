@@ -64,8 +64,30 @@ class CollisionDebounce(Node):
         in_topic = self.declare_parameter('cmd_vel_in_topic', 'cmd_vel').value
         out_topic = self.declare_parameter('cmd_vel_out_topic', 'cmd_vel_debounced').value
         state_topic = self.declare_parameter('state_topic', 'collision_monitor_state').value
-        self.deadband_linear = self.declare_parameter('deadband_linear', 0.4).value
-        self.deadband_angular = self.declare_parameter('deadband_angular', 0.6).value
+        # Lowered 2026-11-12, found live via a recorded bag at a real
+        # doorway: deadband_linear=0.4 was set to this robot's measured
+        # "smooth" forward threshold (velocity_pulse.py: 0.3 min/0.4
+        # smooth), not its bare minimum -- so MPPI's own legitimate,
+        # deliberately-careful ~0.3 m/s near a tight passage got zeroed
+        # on every single cycle, independent of collision_monitor's
+        # SlowZone. Confirmed from the same bag: 759 of 2313 final
+        # /cmd_vel samples (33%) had both linear AND angular zeroed here
+        # despite real, nonzero commands upstream -- systemic, not a
+        # one-off at the doorway. Lowered to 0.3, this robot's own
+        # measured forward minimum, so at least that speed is usable.
+        #
+        # deadband_angular lowered from 0.6 (this robot's measured PURE
+        # in-place rotation minimum, not combined motion) to 0.3 as a
+        # reasoned-but-unmeasured guess: the zeroed angular commands seen
+        # in that same bag (~0.25 rad/s) were combined with simultaneous
+        # forward/lateral motion, a different regime from pure rotation
+        # -- the legs are already stepping, so pure rotation's "stepping
+        # in place accomplishes nothing" dead zone may not apply the same
+        # way. Revisit with a real measurement (velocity_pulse.py or
+        # equivalent, combined-motion case) rather than trusting this
+        # guess long-term.
+        self.deadband_linear = self.declare_parameter('deadband_linear', 0.3).value
+        self.deadband_angular = self.declare_parameter('deadband_angular', 0.3).value
 
         self.current_severity = 0
         self.held_twist = Twist()
