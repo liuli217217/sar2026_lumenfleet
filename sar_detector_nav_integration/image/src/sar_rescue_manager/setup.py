@@ -8,4 +8,6 @@ setup(name='sar_rescue_manager', version='0.1.0', packages=['sar_rescue_manager'
  entry_points={'console_scripts': [
  'rescue_manager = sar_rescue_manager.node:main',
  'managed_explorer = sar_rescue_manager.managed_explorer:main',
- 'mock_rescue = sar_rescue_manager.mock_rescue:main']})
+ 'mock_rescue = sar_rescue_manager.mock_rescue:main',
+ 'referee_adapter = sar_rescue_manager.referee_adapter:main',
+ 'real_rescue = sar_rescue_manager.real_rescue:main']})

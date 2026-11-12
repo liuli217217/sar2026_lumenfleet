@@ -9,4 +9,6 @@
 <exec_depend>action_msgs</exec_depend><exec_depend>tf2_ros</exec_depend>
 <exec_depend>launch</exec_depend><exec_depend>launch_ros</exec_depend>
 <exec_depend>ament_index_python</exec_depend><exec_depend>sar_target_mapping</exec_depend>
+<!-- DETECTOR_NAV_INTEGRATION: real_rescue posts sport requests (Sit/RiseSit). -->
+<exec_depend>unitree_api</exec_depend>
 <export><build_type>ament_python</build_type></export></package>

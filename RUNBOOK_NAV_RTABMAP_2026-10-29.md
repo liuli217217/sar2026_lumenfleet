@@ -139,6 +139,52 @@ Nav2, and any quantitative comparison. Hybrid explorer, `explore_lite`, waypoint
 `reactive_avoid` on this robot, and the TurboVNC RViz Nav2 panel (`nav2_rviz_plugins` on the
 host) were not tested.
 
+## 3b. Safety zones and the detector/rescue workflow (updated 2026-11-12)
+
+### collision_monitor zones are direction-aware now
+
+`StopZone` / `SlowZone` in `nav2_params*.yaml` are `type: velocity_polygon`, not plain
+polygons. A plain polygon decides only on "is a scan point inside this box" and ignores
+which way the command would move the robot, so once an obstacle is inside StopZone every
+command is zeroed -- including the one that would back out. Measured on a 12-goal
+benchmark: 2/12, with nine goals travelling exactly 0.00 m, and both recovery behaviours
+failing 10/10 because their escape commands were zeroed too. With direction-aware zones
+the same 12 goals score 12/12.
+
+What to watch for on the robot:
+
+* The log must NOT contain `Velocity is not covered by any of the velocity polygons`.
+  If it does, a commanded velocity fell outside every sub-polygon's range and the node
+  **keeps the previous polygon** -- a silent, stale-geometry failure. Widen
+  `linear_min`/`linear_max`/`theta_min`/`theta_max` until it stops.
+* `collision_monitor/stop_zone` in RViz flips its box when you command reverse. That is
+  the intended behaviour, not a glitch.
+* Forward protection is unchanged: the lateral half-widths and the forward extents are
+  the same numbers as before; only the trailing extent was cut back.
+
+`stop_pub_timeout` is 10.0 s (was 2.0). The monitor stops publishing after that long of
+continuous zero output, and downstream cannot tell that apart from a dead pipeline.
+Nothing else publishes `cmd_vel_raw` in this stack, so keeping it talking is free.
+
+### Detector + rescue workflow (`sar_detector_nav_integration/`)
+
+```bash
+ros2 launch sar_rescue_manager rescue_mission.launch.py          # rescue_executor:=real (default)
+ros2 launch sar_rescue_manager rescue_mission.launch.py rescue_executor:=mock   # dry run
+```
+
+* **`rescue_executor` now defaults to `real`**, which sits the robot down for real
+  (`StopMove` -> `Sit` -> `RiseSit`) when it reaches a victim. The old `mock` executor
+  only answers "done" and changes no posture -- use it for dry runs where the robot must
+  stay standing. Operator ready before the first run: the robot really sits.
+* `referee_adapter` starts alongside and republishes completions as `/sar/events`
+  (`MISSION_START`, `SIT <id>`) so `mission_monitor` can score this workflow with the same
+  referee as the other algorithms. It only subscribes; outside simulation nothing listens
+  and it is inert.
+* Still unverified end to end: this workspace has not run under Docker, DDS or a real
+  Nav2 (see `sar_detector_nav_integration/RESCUE_WORKFLOW.md`). Treat the first run as a
+  first test, not a rerun.
+
 ## 4. Saving work
 ```bash
 # laptop
