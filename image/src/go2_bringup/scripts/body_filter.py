@@ -12,10 +12,20 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2
 
-# xmin, xmax, ymin, ymax, zmin, zmax relative to base_link. Same box already
-# validated for the stationary case in lumen_sensor_tests; widened slightly
-# in y since a walking gait swings the legs out further than standing does.
-EXCLUSION_BOX = (-0.40, 0.40, -0.30, 0.30, -0.50, 0.30)
+# xmin, xmax, ymin, ymax, zmin, zmax relative to base_link. Original box
+# validated for the stationary case in lumen_sensor_tests, widened in y for
+# walking gait leg swing (2026-11-10). Widened again 2026-11-12: found live
+# that this box was never validated against Spin/BackUp recovery motions --
+# a pivoting in-place turn moves the legs differently than straight walking,
+# and a self-return outside this box during Spin produced a lethal costmap
+# cell essentially at the robot's own position, blocking the global planner
+# (every goal failed identically regardless of destination) and causing
+# collision_monitor to repeatedly re-trigger StopZone through the turn,
+# timing out the recovery itself. This widening (x 0.40->0.45, y 0.30->0.40)
+# is a reasoned estimate, not a measurement like the walking-gait one above
+# -- verify with an isolated stationary Spin test (watch for a self-return
+# blob in RViz the same way) before trusting this box size in general use.
+EXCLUSION_BOX = (-0.45, 0.45, -0.40, 0.40, -0.50, 0.30)
 
 
 class BodyFilter(Node):
