@@ -23,20 +23,29 @@ more restrictive severity is repeated instead of forwarding the fluctuating
 one. A stop (or any new restriction) is therefore never delayed -- only its
 release is.
 
-Also applies deadband_linear/deadband_angular to every outgoing Twist
-(2026-11-10). MPPI can choose a small-but-nonzero "optimal" trajectory
-(e.g. 0.15, then 0.075 after SlowZone's cut) that sits below the robot's
-real measured minimum executable speed (forward ~0.3-0.4, reverse
-~0.4-0.5, rotation ~0.6) and produces zero actual movement while looking
-like a valid command. The obvious place to filter this is
-go2_cmd_vel_bridge, but the Docker image's build of that node (confirmed
-by diffing it against the native workspace's copy, which does have a
-deadband) is a different, divergent implementation with no deadband
-capability at all, and fixing that requires a C++ rebuild rather than a
-hot patch. This is a safe, equivalent place to enforce it instead: it
-runs before the bridge in the pipeline, zeroes won't ever get held as a
-"real" severity-change command, and the stop-while-stale watchdog path
-already publishes a pure zero Twist either way.
+Also applies a minimum-speed floor to every outgoing Twist (2026-11-10,
+redesigned 2026-11-12). MPPI can choose a small-but-nonzero "optimal"
+trajectory that sits below the robot's real measured minimum executable
+speed (forward ~0.3-0.4, reverse ~0.4-0.5, rotation ~0.6) and produces
+zero actual movement while looking like a valid command -- confirmed
+live via a recorded bag at a real doorway, where this was happening on
+a third of all outgoing commands, not just an edge case. The original
+fix zeroed anything below that minimum outright; found live that this
+just moves the failure to wherever MPPI is most cautious (tight
+passages), where it keeps choosing something slower than any fixed
+floor. Now: genuine near-zero noise still gets zeroed, but a real,
+intentional, too-slow command gets its magnitude clamped UP to the
+robot's known minimum instead of discarded -- MPPI still decides
+direction and whether to move at all. The obvious place to enforce this
+is go2_cmd_vel_bridge, but the Docker image's build of that node
+(confirmed by diffing it against the native workspace's copy, which
+does have a deadband) is a different, divergent implementation with no
+deadband capability at all, and fixing that requires a C++ rebuild
+rather than a hot patch. This is a safe, equivalent place to enforce it
+instead: it runs before the bridge in the pipeline, held/zero commands
+won't ever get mistaken for a "real" severity-change command, and the
+stop-while-stale watchdog path already publishes a pure zero Twist
+either way.
 """
 
 import rclpy
@@ -64,30 +73,40 @@ class CollisionDebounce(Node):
         in_topic = self.declare_parameter('cmd_vel_in_topic', 'cmd_vel').value
         out_topic = self.declare_parameter('cmd_vel_out_topic', 'cmd_vel_debounced').value
         state_topic = self.declare_parameter('state_topic', 'collision_monitor_state').value
-        # Lowered 2026-11-12, found live via a recorded bag at a real
-        # doorway: deadband_linear=0.4 was set to this robot's measured
-        # "smooth" forward threshold (velocity_pulse.py: 0.3 min/0.4
-        # smooth), not its bare minimum -- so MPPI's own legitimate,
-        # deliberately-careful ~0.3 m/s near a tight passage got zeroed
-        # on every single cycle, independent of collision_monitor's
-        # SlowZone. Confirmed from the same bag: 759 of 2313 final
-        # /cmd_vel samples (33%) had both linear AND angular zeroed here
-        # despite real, nonzero commands upstream -- systemic, not a
-        # one-off at the doorway. Lowered to 0.3, this robot's own
-        # measured forward minimum, so at least that speed is usable.
+        # Redesigned 2026-11-12, found live via a recorded bag at a real
+        # doorway: the original rule ("below deadband -> send zero")
+        # discarded MPPI's own legitimate, deliberately-careful slow
+        # commands near a tight passage -- confirmed from that bag, 759
+        # of 2313 final /cmd_vel samples (33%) had both linear AND
+        # angular zeroed despite real, nonzero commands upstream, not
+        # just near the doorway. Lowering deadband_linear alone
+        # (0.4 -> 0.3) wasn't enough either: right at the tightest part
+        # of a passage, MPPI's own obstacle-proximity cost pushes it to
+        # choose an even slower speed than whatever fixed floor is set,
+        # so a single "below X, zero" threshold is always eventually
+        # undercut exactly where progress matters most.
         #
-        # deadband_angular lowered from 0.6 (this robot's measured PURE
-        # in-place rotation minimum, not combined motion) to 0.3 as a
-        # reasoned-but-unmeasured guess: the zeroed angular commands seen
-        # in that same bag (~0.25 rad/s) were combined with simultaneous
-        # forward/lateral motion, a different regime from pure rotation
-        # -- the legs are already stepping, so pure rotation's "stepping
-        # in place accomplishes nothing" dead zone may not apply the same
-        # way. Revisit with a real measurement (velocity_pulse.py or
-        # equivalent, combined-motion case) rather than trusting this
-        # guess long-term.
+        # Now a genuine floor, not a discard threshold: a command whose
+        # magnitude is real (above noise_floor_*, filtering true sensor/
+        # rounding jitter) but below deadband_* (this robot's measured
+        # minimum reliable speed) is CLAMPED UP to deadband_* instead of
+        # zeroed -- MPPI still decides direction and whether to move at
+        # all; only a too-slow-to-execute-cleanly magnitude gets raised
+        # to what the robot can actually do smoothly. Applies
+        # symmetrically to linear (x, y) and angular (z).
+        #
+        # deadband_linear: this robot's measured forward minimum
+        # (velocity_pulse.py: 0.3 min/0.4 smooth).
+        # deadband_angular: 0.6 was measured for PURE in-place rotation;
+        # lowered to 0.3 as a reasoned-but-unmeasured guess for combined
+        # translation+rotation (a different regime -- the legs are
+        # already stepping, so pure rotation's own dead zone may not
+        # apply the same way). Revisit with a real combined-motion
+        # measurement rather than trusting this guess long-term.
         self.deadband_linear = self.declare_parameter('deadband_linear', 0.3).value
         self.deadband_angular = self.declare_parameter('deadband_angular', 0.3).value
+        self.noise_floor_linear = self.declare_parameter('noise_floor_linear', 0.05).value
+        self.noise_floor_angular = self.declare_parameter('noise_floor_angular', 0.05).value
 
         self.current_severity = 0
         self.held_twist = Twist()
@@ -112,14 +131,27 @@ class CollisionDebounce(Node):
         # Unknown/unconfigured action types fail safe to most restrictive.
         self.last_state_severity = SEVERITY.get(msg.action_type, MOST_RESTRICTIVE)
 
+    @staticmethod
+    def _floor_to_minimum(value, noise_floor, minimum):
+        """Below noise_floor: true noise, zero it. Between noise_floor and
+        minimum: a real but too-slow-to-execute-cleanly command, clamp its
+        magnitude up to minimum, keeping its sign/direction. At or above
+        minimum: already fine, pass through unchanged."""
+        magnitude = abs(value)
+        if magnitude < noise_floor:
+            return 0.0
+        if magnitude < minimum:
+            return minimum if value > 0 else -minimum
+        return value
+
     def _apply_deadband(self, msg):
         out = Twist()
-        out.linear.x = msg.linear.x if abs(msg.linear.x) >= self.deadband_linear else 0.0
-        out.linear.y = msg.linear.y if abs(msg.linear.y) >= self.deadband_linear else 0.0
+        out.linear.x = self._floor_to_minimum(msg.linear.x, self.noise_floor_linear, self.deadband_linear)
+        out.linear.y = self._floor_to_minimum(msg.linear.y, self.noise_floor_linear, self.deadband_linear)
         out.linear.z = msg.linear.z
         out.angular.x = msg.angular.x
         out.angular.y = msg.angular.y
-        out.angular.z = msg.angular.z if abs(msg.angular.z) >= self.deadband_angular else 0.0
+        out.angular.z = self._floor_to_minimum(msg.angular.z, self.noise_floor_angular, self.deadband_angular)
         return out
 
     def on_cmd_vel(self, msg):
