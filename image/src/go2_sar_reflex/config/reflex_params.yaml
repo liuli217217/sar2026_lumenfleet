@@ -1,0 +1,58 @@
+# Reflex: search and rescue with no map, no SLAM and no global planner.
+# The fallback for a robot that cannot run mapping. See NAVIGATION.md.
+#
+# Tuned for the 5x8 m training arena. Every value here is read from the
+# current scan or a clock -- none of it depends on a pose estimate.
+sar_reflex:
+  ros__parameters:
+    time_limit: 300.0              # [s] from the mission start
+    expected_victims: 4
+
+    # Motion. NOTE: min_forward_speed 0.22 suits CHAMP (it walks on the spot
+    # below ~0.15 m/s). The REAL Go2 does not move below 0.30 m/s -- raise
+    # this to 0.30 on the robot or it will crawl instead of walking.
+    max_linear_speed: 0.30
+    min_forward_speed: 0.22
+    max_angular_speed: 0.60
+    max_lateral_speed: 0.25
+    heading_gain: 1.2
+
+    # Reflex avoidance: a fan of candidate headings scored on the latest scan.
+    stop_distance: 0.55
+    slow_distance: 1.00
+    gap_half_angle: 1.40
+    gap_bins: 29
+    side_clearance: 0.35
+
+    # Coverage comes from wall following, not from reasoning about what has
+    # been seen. One consistent hand traverses the arena's connected walls.
+    follow_wall: left
+    wall_standoff: 0.90
+    wall_window: 0.50
+    wall_search_range: 2.50
+    wall_gain: 1.10
+    wall_max_offset: 0.70
+
+    # Victims. Same rejections as Survey -- without them the 8 spectators
+    # standing behind the 1.2 m arena walls get counted as victims.
+    detection_min_score: 0.40
+    confirm_hits: 3
+    confirm_window: 2.0
+    confirm_bearing_tol: 0.25
+    victim_min_range: 0.5
+    victim_max_range: 6.0
+    min_person_extent: 0.25
+    victim_max_bottom: 0.55
+    victim_max_top: 1.30
+    sit_distance: 0.75
+    sit_duration: 3.0
+    approach_timeout: 25.0
+    victim_fresh_time: 1.5         # a sit needs a sighting this recent -- without
+                                   # this the lidar range to a WALL in the victim's
+                                   # direction reads the same as the victim
+    victim_lost_time: 6.0
+    sit_bearing_tol: 0.45
+    approach_face_tol: 0.55
+    track_bearing_tol: 0.60
+    blacklist_radius: 1.50
+    turn_away_time: 2.0

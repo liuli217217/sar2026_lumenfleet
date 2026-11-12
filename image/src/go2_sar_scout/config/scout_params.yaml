@@ -1,0 +1,54 @@
+# reactive_explorer (A1) on the 5x8 arena, through the same bridge the other
+# algorithms use, so the score is comparable.
+#
+# The shipped reactive_explorer_legacy.yaml targets disaster_maze_4x4.sdf: a
+# 4x4 m maze with field_bounds [0,4,0,4]. Those bounds would confine the robot
+# to a box that does not contain three of the four arena victims, so they are
+# replaced here with the arena's real extent from missions/arena_5x8/map.yaml
+# (origin [-1.0, -4.2], 172x112 cells at 0.05 m) plus a small margin.
+sar_scout:
+  ros__parameters:
+    # Topics: the node predates the go2_bridge chain and defaults to raw CHAMP
+    # topics. Pointing it at /go2/* and /sar/* puts it on the same path as
+    # sar_explorer, sar_navigator and sar_reflex.
+    cloud_topic: /go2/cloud
+    imu_topic: /go2/imu
+    odom_topic: /go2/odom
+    detections_topic: /sar/person_detections
+    cmd_vel_topic: /sar/cmd_vel
+    body_pose_topic: /sar/body_pose
+
+    target_victims: 4
+    max_mission_time: 300.0
+    start_after_sim_time: 40.0
+
+    initial_x: 0.0
+    initial_y: 0.0
+    initial_yaw: 0.0
+    field_bounds: [-1.2, 7.8, -4.4, 1.6]
+
+    # dead_reckoning, not odom. Measured on the arena, 300 s each:
+    #   dead_reckoning  2/4, 4 sit-downs, covered 16.9 m2
+    #   odom            1/4, 3 sit-downs, covered  8.3 m2
+    # Switching to /go2/odom did fix the first sit (victim_4 at 0.47 m instead
+    # of 1.50 m) but halved the ground covered and produced two sits next to
+    # nothing, one with the explorer's own position about 4 m from the truth.
+    # The likely reason is the visited-cell memory that drives its novelty
+    # score: a pose that jumps marks the wrong cells as visited, so the
+    # explorer believes it has already been where it has not. Keeping dead
+    # reckoning until that interaction is understood.
+    pose_source: dead_reckoning
+    scan_matching: true
+
+    # Geometry. The node defaults (robot_half_width 0.28, stop_distance 0.65,
+    # min_free_distance 1.1) were chosen for disaster_maze_4x4.sdf, whose
+    # corridors are 1.25 m wide. In the 5x8 arena, which is full of cones,
+    # barrels and barriers, almost nothing is 1.1 m clear, so all 48 candidate
+    # headings were rejected and the robot could only turn on the spot -- and
+    # turning does not change what is around it, so it never escaped.
+    # Measured: 300 s spent inside a 0.3 m square, free=0..5 of 48, forward
+    # speed 0.00 throughout. These three are aligned with sar_reflex, which is
+    # known to traverse this arena.
+    robot_half_width: 0.22
+    stop_distance: 0.50
+    min_free_distance: 0.70
