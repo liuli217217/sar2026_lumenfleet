@@ -16,7 +16,16 @@
     # transient lag was misread as "no frontiers left" and exploration
     # stopped early despite the map being far from fully explored.
     transform_tolerance: 2.0
-    min_frontier_size: 1.5
+    # Lowered 2026-11-12, night before competition: found live that with
+    # min_frontier_size at the original 1.5 (requires ~30 connected cells
+    # at 0.05m resolution) and min_frontier_distance at its compiled
+    # default (0.75, added today specifically to reject frontiers right
+    # on top of the robot -- see frontier_search.cpp), a visibly
+    # reasonably-explored area still produced 5 clusters with 0 passing
+    # both filters -- too strict for a freshly-growing real map, same
+    # situation hit and fixed in sim testing earlier today.
+    min_frontier_size: 0.5
+    min_frontier_distance: 0.3
     # Fixes the resend-thrash bug this package was abandoned for: see
     # makePlan()/explore.cpp. Same value as hybrid_explorer.py's
     # min_commit_sec for the identical failure shape.
