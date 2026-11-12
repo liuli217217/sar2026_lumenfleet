@@ -27,6 +27,11 @@ std::vector<Frontier>
 FrontierSearch::searchFrom(geometry_msgs::msg::Point position)
 {
   std::vector<Frontier> frontier_list;
+  // Instrumentation (Codex review, 2026-11-12): makes a future "No
+  // frontiers found" stop diagnosable without guessing whether it's zero
+  // clusters, undersized clusters, or (in the caller, makePlan()) a fully
+  // blacklisted set -- this function only sees the first two.
+  size_t clusters_found = 0;
 
   // Sanity check that robot is inside costmap bounds before searching
   unsigned int mx, my;
@@ -76,6 +81,7 @@ FrontierSearch::searchFrom(geometry_msgs::msg::Point position)
       } else if (isNewFrontierCell(nbr, frontier_flag)) {
         frontier_flag[nbr] = true;
         Frontier new_frontier = buildNewFrontier(nbr, pos, frontier_flag);
+        clusters_found++;
         if (new_frontier.size * costmap_->getResolution() >=
             min_frontier_size_) {
           frontier_list.push_back(new_frontier);
@@ -83,6 +89,11 @@ FrontierSearch::searchFrom(geometry_msgs::msg::Point position)
       }
     }
   }
+
+  RCLCPP_INFO(logger_,
+             "[FrontierSearch] %zu cluster(s) found, %zu passed the "
+             "min_frontier_size filter (%.2f)",
+             clusters_found, frontier_list.size(), min_frontier_size_);
 
   // set costs of frontiers
   for (auto& frontier : frontier_list) {
@@ -101,8 +112,6 @@ Frontier FrontierSearch::buildNewFrontier(unsigned int initial_cell,
 {
   // initialize frontier structure
   Frontier output;
-  output.centroid.x = 0;
-  output.centroid.y = 0;
   output.size = 1;
   output.min_distance = std::numeric_limits<double>::infinity();
 
@@ -110,6 +119,16 @@ Frontier FrontierSearch::buildNewFrontier(unsigned int initial_cell,
   unsigned int ix, iy;
   costmap_->indexToCells(initial_cell, ix, iy);
   costmap_->mapToWorld(ix, iy, output.initial.x, output.initial.y);
+
+  // Centroid bug fix (Codex review, 2026-11-12): output.size starts at 1
+  // to count the initial cell, but the initial cell's own coordinates were
+  // never added to the centroid sum below -- only cells visited by the
+  // inner BFS were. That understated every centroid by (initial cell's
+  // position / cluster size), up to ~0.2m for a 30-cell cluster at this
+  // map's resolution. The initial cell IS the frontier's own contact
+  // point, so seed the sum with it.
+  output.centroid.x = output.initial.x;
+  output.centroid.y = output.initial.y;
 
   // push initial gridcell onto queue
   std::queue<unsigned int> bfs;

@@ -70,6 +70,18 @@ Explore::Explore()
   this->declare_parameter<float>("gain_scale", 1.0);
   this->declare_parameter<float>("min_frontier_size", 0.5);
   this->declare_parameter<bool>("return_to_init", false);
+  // How long after startup a "No frontiers found" result is treated as
+  // "the SLAM backend's cold start hasn't produced a real map yet" rather
+  // than genuine completion -- see makePlan()'s frontiers.empty() branch.
+  // Measured in this node's own clock (sim time, when use_sim_time:true,
+  // as in the Gazebo sim) -- NOT wall-clock. Confirmed live at real_time_
+  // factor ~0.5 (gz topic -e -t /stats) with the Velodyne bridge only
+  // delivering ~3.5Hz instead of its nominal 10Hz under load: 20s of sim
+  // time cost ~40s of wall-clock and still wasn't enough for RTAB-Map to
+  // produce any real map content. 90s gives real margin at this kind of
+  // degraded rate; it costs nothing when the SLAM backend is actually
+  // fast, since exploration starts the moment real frontiers appear.
+  this->declare_parameter<float>("startup_grace_period", 90.0);
   // Same value/pattern as hybrid_explorer.py's min_commit_sec, fixing the
   // identical resend-thrash failure shape -- see makePlan().
   this->declare_parameter<float>("min_replan_interval", 1.5);
@@ -84,6 +96,8 @@ Explore::Explore()
   this->get_parameter("return_to_init", return_to_init_);
   this->get_parameter("robot_base_frame", robot_base_frame_);
   this->get_parameter("min_replan_interval", min_replan_interval_);
+  this->get_parameter("startup_grace_period", startup_grace_period_);
+  node_start_time_ = this->now();
 
   progress_timeout_ = timeout;
   // Comfortably in the past so the very first makePlan() call is never
@@ -139,11 +153,26 @@ Explore::Explore()
   exploring_timer_ = this->create_wall_timer(
       std::chrono::milliseconds((uint16_t)(1000.0 / planner_frequency_)),
       [this]() { makePlan(); });
-  // Start exploration right away
   auto status_msg = explore_lite_msgs::msg::ExploreStatus();
   status_msg.status = explore_lite_msgs::msg::ExploreStatus::EXPLORATION_STARTED;
   status_pub_->publish(status_msg);
-  makePlan();
+  // Startup grace delay (2026-11-12, found while verifying Codex's
+  // review): calling makePlan() synchronously right here races against
+  // the SLAM backend's own cold start. Confirmed live: RTAB-Map hadn't
+  // published a single real map yet when this fired, so the very first
+  // search found zero clusters, which calls stop(true) -- and stop()
+  // cancels exploring_timer_ itself (see stop()/resume() below), so
+  // nothing ever ran again automatically. The robot sat still for the
+  // rest of the run even though the map filled in with real, reachable
+  // frontiers a few seconds later; only a manual /explore/resume publish
+  // would have restarted it. This one-shot delay gives the SLAM backend's
+  // first mapping cycle time to finish before the first real search
+  // instead.
+  startup_timer_ = this->create_wall_timer(
+      std::chrono::milliseconds(3000), [this]() {
+        startup_timer_->cancel();
+        makePlan();
+      });
 }
 
 Explore::~Explore()
@@ -245,6 +274,27 @@ void Explore::makePlan()
   }
 
   if (frontiers.empty()) {
+    // Startup grace period (2026-11-12): a single fixed delay before the
+    // first search (startup_timer_ above) turned out not to be reliable
+    // margin -- confirmed live, hit the exact same "0 clusters found"
+    // result again under heavier system load, after the robot hadn't
+    // moved at all, meaning the SLAM backend's map still had essentially
+    // no real content yet. Rather than guess a bigger fixed delay (which
+    // just moves the same race to a different load level), tolerate empty
+    // results for a configurable window after startup: retry on the next
+    // periodic tick instead of calling stop(true), which would otherwise
+    // cancel exploring_timer_ permanently (see stop()) and leave the robot
+    // frozen even after the map fills in with real frontiers seconds
+    // later -- exactly what happened twice now.
+    if ((this->now() - node_start_time_) <
+        tf2::durationFromSec(startup_grace_period_)) {
+      RCLCPP_WARN(logger_,
+                 "No frontiers found within the startup grace period "
+                 "(%.1fs elapsed) -- SLAM backend may not have a real map "
+                 "yet, will retry.",
+                 (this->now() - node_start_time_).seconds());
+      return;
+    }
     RCLCPP_WARN(logger_, "No frontiers found, stopping.");
     auto status_msg = explore_lite_msgs::msg::ExploreStatus();
     status_msg.status = explore_lite_msgs::msg::ExploreStatus::EXPLORATION_COMPLETE;
@@ -325,7 +375,21 @@ void Explore::makePlan()
   // send goal to move_base if we have something new to pursue
   auto goal = nav2_msgs::action::NavigateToPose::Goal();
   goal.pose.pose.position = target_position;
-  goal.pose.pose.orientation.w = 1.;
+  // Face the direction of travel instead of a fixed yaw=0 (Codex review,
+  // 2026-11-12, sim diagnostic doc): every frontier goal previously
+  // requested the same absolute heading regardless of where it actually
+  // was relative to the robot, which can force an unnecessary final spin
+  // right in a doorway or next to clutter -- exactly the geometry of the
+  // Room B box-cluster case this review was investigating. Heading toward
+  // the goal is a plain yaw-only quaternion, computed directly instead of
+  // pulling in tf2::Quaternion for one rotation.
+  {
+    const double dx = target_position.x - pose.position.x;
+    const double dy = target_position.y - pose.position.y;
+    const double yaw = std::atan2(dy, dx);
+    goal.pose.pose.orientation.z = std::sin(yaw / 2.0);
+    goal.pose.pose.orientation.w = std::cos(yaw / 2.0);
+  }
   goal.pose.header.frame_id = costmap_client_.getGlobalFrameID();
   goal.pose.header.stamp = this->now();
 

@@ -122,6 +122,9 @@ private:
       move_base_client_;
   frontier_exploration::FrontierSearch search_;
   rclcpp::TimerBase::SharedPtr exploring_timer_;
+  rclcpp::TimerBase::SharedPtr startup_timer_;
+  rclcpp::Time node_start_time_;
+  double startup_grace_period_;
   // rclcpp::TimerBase::SharedPtr oneshot_;
 
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr resume_subscription_;
