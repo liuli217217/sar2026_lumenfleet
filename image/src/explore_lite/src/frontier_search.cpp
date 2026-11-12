@@ -14,11 +14,14 @@ using nav2_costmap_2d::NO_INFORMATION;
 
 FrontierSearch::FrontierSearch(nav2_costmap_2d::Costmap2D* costmap,
                                double potential_scale, double gain_scale,
-                               double min_frontier_size, rclcpp::Logger logger)
+                               double min_frontier_size,
+                               double min_frontier_distance,
+                               rclcpp::Logger logger)
   : costmap_(costmap)
   , potential_scale_(potential_scale)
   , gain_scale_(gain_scale)
   , min_frontier_size_(min_frontier_size)
+  , min_frontier_distance_(min_frontier_distance)
   , logger_(logger)
 {
 }
@@ -82,8 +85,20 @@ FrontierSearch::searchFrom(geometry_msgs::msg::Point position)
         frontier_flag[nbr] = true;
         Frontier new_frontier = buildNewFrontier(nbr, pos, frontier_flag);
         clusters_found++;
+        // min_frontier_distance (2026-11-12, found live on the real
+        // robot): a frontier essentially on top of the robot -- e.g. a
+        // sliver of unknown space in the robot's own sensor blind spot,
+        // which standing still can never resolve -- kept winning
+        // frontier selection (closest = cheapest in frontierCost()) over
+        // any genuinely useful, farther frontier. Confirmed live:
+        // explore_node repeatedly re-sent and trivially "succeeded" at
+        // the same single nearby frontier with flat-zero /cmd_vel the
+        // whole time, never making real progress. Rejecting anything
+        // closer than min_frontier_distance_ here forces frontierCost()
+        // to only ever consider frontiers actually worth traveling to.
         if (new_frontier.size * costmap_->getResolution() >=
-            min_frontier_size_) {
+                min_frontier_size_ &&
+            new_frontier.min_distance >= min_frontier_distance_) {
           frontier_list.push_back(new_frontier);
         }
       }
@@ -92,8 +107,10 @@ FrontierSearch::searchFrom(geometry_msgs::msg::Point position)
 
   RCLCPP_INFO(logger_,
              "[FrontierSearch] %zu cluster(s) found, %zu passed the "
-             "min_frontier_size filter (%.2f)",
-             clusters_found, frontier_list.size(), min_frontier_size_);
+             "min_frontier_size (%.2f) and min_frontier_distance (%.2f) "
+             "filters",
+             clusters_found, frontier_list.size(), min_frontier_size_,
+             min_frontier_distance_);
 
   // set costs of frontiers
   for (auto& frontier : frontier_list) {

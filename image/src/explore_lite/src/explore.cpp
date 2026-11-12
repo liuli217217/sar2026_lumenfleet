@@ -62,6 +62,7 @@ Explore::Explore()
 {
   double timeout;
   double min_frontier_size;
+  double min_frontier_distance;
   this->declare_parameter<float>("planner_frequency", 1.0);
   this->declare_parameter<float>("progress_timeout", 30.0);
   this->declare_parameter<bool>("visualize", false);
@@ -69,6 +70,11 @@ Explore::Explore()
   this->declare_parameter<float>("orientation_scale", 0.0);
   this->declare_parameter<float>("gain_scale", 1.0);
   this->declare_parameter<float>("min_frontier_size", 0.5);
+  // Rejects any frontier closer than this to the robot's own current
+  // position -- see frontier_search.cpp's filter comment for why
+  // (sensor-blind-spot/self-occlusion frontiers that standing still can
+  // never resolve, found live on the real robot 2026-11-12).
+  this->declare_parameter<float>("min_frontier_distance", 0.75);
   this->declare_parameter<bool>("return_to_init", false);
   // How long after startup a "No frontiers found" result is treated as
   // "the SLAM backend's cold start hasn't produced a real map yet" rather
@@ -93,6 +99,7 @@ Explore::Explore()
   this->get_parameter("orientation_scale", orientation_scale_);
   this->get_parameter("gain_scale", gain_scale_);
   this->get_parameter("min_frontier_size", min_frontier_size);
+  this->get_parameter("min_frontier_distance", min_frontier_distance);
   this->get_parameter("return_to_init", return_to_init_);
   this->get_parameter("robot_base_frame", robot_base_frame_);
   this->get_parameter("min_replan_interval", min_replan_interval_);
@@ -107,9 +114,9 @@ Explore::Explore()
       rclcpp_action::create_client<nav2_msgs::action::NavigateToPose>(
           this, ACTION_NAME);
 
-  search_ = frontier_exploration::FrontierSearch(costmap_client_.getCostmap(),
-                                                 potential_scale_, gain_scale_,
-                                                 min_frontier_size, logger_);
+  search_ = frontier_exploration::FrontierSearch(
+      costmap_client_.getCostmap(), potential_scale_, gain_scale_,
+      min_frontier_size, min_frontier_distance, logger_);
 
   if (visualize_) {
     marker_array_publisher_ =
