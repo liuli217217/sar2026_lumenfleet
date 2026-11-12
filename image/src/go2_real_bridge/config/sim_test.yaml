@@ -1,0 +1,77 @@
+# Overrides for testing the real-robot stack in Gazebo (real_sar.launch.py sim_test:=true):
+# fake_go2 turns the simulation into Go2 topics; the sensors are the simulated ones.
+fake_go2:
+  ros__parameters:
+    sim_cloud: /velodyne_points/points
+    cmd_timeout: 0.5
+
+person_detector:
+  ros__parameters:
+    image_topic: /rgb_image
+
+sar_slam:
+  ros__parameters:
+    start_after_sim_time: 40.0           # CHAMP stands up at ~30 s
+    camera_info_topic: ''
+    lidar_xyz: [0.2, 0.0, 0.1177]        # simulated Velodyne
+    lidar_rpy: [0.0, 0.0, 0.0]
+    lidar_blind_range: 0.8
+    near_guard: 1.2
+    body_box: [-0.5, 0.35, 0.25]
+    camera_xyz: [0.326, 0.0, 0.043]
+    ground_z_init: -0.21
+    ground_z_min: -0.32
+    ground_z_max: -0.10
+    stand_up_duration: 1.5
+
+sar_prior:
+  ros__parameters:
+    start_after_sim_time: 40.0
+    camera_info_topic: ''
+    lidar_xyz: [0.2, 0.0, 0.1177]
+    lidar_rpy: [0.0, 0.0, 0.0]
+    body_box: [-0.5, 0.35, 0.25]
+    camera_xyz: [0.326, 0.0, 0.043]
+    ground_z_init: -0.21
+    ground_z_min: -0.32
+    ground_z_max: -0.10
+    stand_up_duration: 1.5
+
+# Scout and Reflex: undo real_scout.yaml / real_reflex.yaml, which the launch
+# loads in simulation too. Each entry here is the simulation counterpart of one
+# hardware value in those files -- keep the two sides in step.
+#
+# NOTE (2026-11-13): before this section existed, real_reflex.yaml's
+# min_forward_speed 0.30 leaked into every Gazebo Reflex run. CHAMP tops out
+# near 0.3 m/s, so Reflex was effectively pinned at full speed with no room to
+# modulate. Every Reflex score measured before this date was produced that way.
+sar_scout:
+  ros__parameters:
+    start_after_sim_time: 40.0           # CHAMP stands up at ~30 s
+    camera_info_topic: ''                # sim camera: use hfov + image size
+    camera_hfov: 1.367
+    camera_xyz: [0.326, 0.0, 0.043]
+    lidar_xyz: [0.2, 0.0, 0.1177]        # simulated Velodyne
+    lidar_rpy: [0.0, 0.0, 0.0]
+    ground_z_init: -0.21
+    ground_z_min: -0.32
+    ground_z_max: -0.10
+    min_forward_speed: 0.22              # CHAMP marks time below ~0.15 m/s
+    robot_half_width: 0.22
+    scan_angular_speed: 0.45
+    stand_up_duration: 2.0
+    velocity_scale: 0.6
+    field_bounds: [-1.2, 7.8, -4.4, 1.6] # the 5x8 training arena
+
+sar_reflex:
+  ros__parameters:
+    start_after_sim_time: 40.0
+    camera_info_topic: ''
+    camera_hfov: 1.367
+    camera_xyz: [0.326, 0.0, 0.043]
+    lidar_xyz: [0.2, 0.0, 0.1177]
+    lidar_rpy: [0.0, 0.0, 0.0]
+    ground_z_init: -0.21
+    ground_z_min: -0.32
+    ground_z_max: -0.10
+    min_forward_speed: 0.22
