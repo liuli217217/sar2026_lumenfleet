@@ -1,6 +1,7 @@
 #include <explore/costmap_tools.h>
 #include <explore/frontier_search.h>
 
+#include <cmath>
 #include <geometry_msgs/msg/point.hpp>
 #include <mutex>
 
@@ -96,9 +97,26 @@ FrontierSearch::searchFrom(geometry_msgs::msg::Point position)
         // whole time, never making real progress. Rejecting anything
         // closer than min_frontier_distance_ here forces frontierCost()
         // to only ever consider frontiers actually worth traveling to.
+        //
+        // Found live again the same night: min_distance alone wasn't
+        // enough -- it's the distance to the cluster's CLOSEST point,
+        // but the goal actually sent (explore.cpp) is the cluster's
+        // CENTROID, a different point. For an irregularly-shaped
+        // cluster (e.g. one that wraps around the robot), every
+        // individual point can legitimately be >= min_frontier_distance_
+        // away while the geometric average of all of them lands almost
+        // exactly on the robot's own position. Confirmed live: a goal
+        // 2.8cm from the robot's current position, "succeeding" in
+        // ~20ms every single replan, forever, with zero real progress.
+        // Check the centroid's own distance too, since that's the point
+        // that actually matters.
+        const double centroid_dx = new_frontier.centroid.x - position.x;
+        const double centroid_dy = new_frontier.centroid.y - position.y;
+        const double centroid_distance = std::hypot(centroid_dx, centroid_dy);
         if (new_frontier.size * costmap_->getResolution() >=
                 min_frontier_size_ &&
-            new_frontier.min_distance >= min_frontier_distance_) {
+            new_frontier.min_distance >= min_frontier_distance_ &&
+            centroid_distance >= min_frontier_distance_) {
           frontier_list.push_back(new_frontier);
         }
       }
