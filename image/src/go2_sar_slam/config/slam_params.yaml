@@ -1,0 +1,27 @@
+# Parameters for the unknown-map search-and-rescue mission (go2_sar_slam).
+# Defaults for everything else are in explorer_node.py (_declare_parameters).
+
+person_detector:
+  ros__parameters:
+    image_topic: /rgb_image
+    confidence_threshold: 0.25
+    iou_threshold: 0.45
+    detection_rate_hz: 4.0
+    num_threads: 4
+    start_enabled: true            # no victim positions: YOLO runs all the time
+    enable_topic: /sar/detector_enable
+    publish_debug_image: true
+    save_detections_dir: ''
+
+sar_slam:
+  ros__parameters:
+    expected_victims: 4
+    time_limit: 300.0              # [s, sim time] from the mission start
+    start_after_sim_time: 40.0     # wait until the CHAMP controllers are up
+    cloud_topic: /velodyne_points/points   # L1 in sim: /unitree_lidar/points + lidar_xyz / lidar_rpy
+
+mission_monitor:
+  ros__parameters:
+    ground_truth_topic: /odom/ground_truth   # referee only, never used by the robot
+    success_distance: 1.0
+    time_limit: 300.0
