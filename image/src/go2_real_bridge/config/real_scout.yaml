@@ -1,0 +1,77 @@
+# Real Unitree Go2, A1 Scout (go2_sar_scout, node sar_scout).
+#
+# This file did not exist before 2026-11-13. The launch sent scout mode to
+# real_nomap.yaml, which only carries a `sar_slam:` section -- parameters are
+# keyed by node name, so `sar_scout` matched nothing and Scout would have run
+# on the robot with its simulation defaults: the Gazebo Velodyne's extrinsic,
+# CHAMP's ground height, CHAMP's walking floor and a 40 s startup idle.
+#
+# SCOPE: hardware and field only. Algorithm tuning stays in
+# go2_sar_scout/config/scout_params.yaml so that what we tune in simulation is
+# what runs on the robot. Every value here has its simulation counterpart in
+# sim_test.yaml (`sar_scout:`), because this file is loaded in simulation too.
+#
+# VERIFY ON THE ROBOT before trusting a run:
+#   ros2 run go2_real_bridge check_sensors --ros-args --params-file <this file>
+# The ground height it prints for front / left / right / behind must be about
+# equal and near ground_z_init.
+sar_scout:
+  ros__parameters:
+    # Real clock: start as soon as IMU + lidar arrive. The 40 s default waits
+    # for CHAMP to stand up and would burn a fifth of the mission here.
+    start_after_sim_time: 0.0
+
+    # --- camera ---
+    # Authoritative. The D435i publishes its own calibration, and the
+    # organizers' camera launch streams 1280x720 while the fallback below
+    # describes a 640x480 sim camera: without this topic every victim bearing
+    # and every ground-plane range comes from the wrong focal length.
+    camera_info_topic: /camera/camera/color/camera_info
+    camera_hfov: 1.211             # fallback only (D435i colour, ~69 deg)
+    # base_link -> colour optical centre. MEASURE on the robot you are given:
+    # the organizers' per-robot calibration adds a few cm and the URDF's D435
+    # mount disagrees with it. Trust the calibration.
+    camera_xyz: [0.33, 0.0, 0.04]
+
+    # --- lidar ---
+    # /utlidar/cloud_base arrives already transformed into base_link by the
+    # firmware, so there is nothing left to apply -- identity. Only restore the
+    # URDF values below if you point go2_bridge's cloud_in at the raw
+    # /utlidar/cloud; applying them to cloud_base transforms it twice and
+    # breaks every ground and obstacle height test.
+    #   Go2 URDF (radar_joint), L1 under the head, upside down:
+    #   lidar_xyz: [0.28945, 0.0, -0.046825]   lidar_rpy: [0.0, 2.8782, 0.0]
+    lidar_xyz: [0.0, 0.0, 0.0]
+    lidar_rpy: [0.0, 0.0, 0.0]
+    ground_z_init: -0.32           # base_link ~0.32 m above the floor standing
+    ground_z_min: -0.42
+    ground_z_max: -0.22
+
+    # --- motion limits that are the robot, not the tuning ---
+    # The real Go2 does not walk below 0.30 m/s. 0.22 is a CHAMP value (CHAMP
+    # marks time below ~0.15 m/s); on the robot it sits under the minimum
+    # executable speed and the result is crawling or twitching.
+    min_forward_speed: 0.30
+    robot_half_width: 0.28         # Go2 body ~0.31 m wide, margin included
+    # RE-MEASURE: CHAMP and the real Go2 do not turn on the spot at the same
+    # rate, and go2_bridge clips max_wz at 0.8.
+    scan_angular_speed: 0.60
+    # go2_bridge turns a body pose below sit_threshold (-0.04) into a real Sit
+    # and settles for rise_settle (3.0 s). This must exceed that, or the node
+    # resumes walking while the robot is still rising.
+    stand_up_duration: 3.5
+
+    # Dead reckoning: travelled distance = commanded v * velocity_scale * dt.
+    # 0.6 was calibrated against CHAMP. MEASURE IT before relying on any
+    # position estimate:
+    #   python3 /validation/move_distance.py --live --speed 0.3 --distance 2.0
+    # and compare with a tape measure. Consider pose_source: odom instead --
+    # /utlidar/robot_odom is the robot's own ~150 Hz odometry and is probably
+    # better than CHAMP's, which is why dead reckoning won in simulation.
+    velocity_scale: 0.6
+
+    # 0,0,0,0 = no virtual walls. The simulation value confines the robot to
+    # the 5x8 training arena; a wrong box on the real field would either trap
+    # the robot or let it leave. Set it to the real field's measured extent,
+    # in the same frame as initial_x / initial_y (the start pose is the origin).
+    field_bounds: [0.0, 0.0, 0.0, 0.0]

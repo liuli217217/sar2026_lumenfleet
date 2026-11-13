@@ -1,0 +1,36 @@
+# Real Go2, mission without a map (go2_sar_slam sar_slam). Defaults: explorer_node.py.
+# VERIFY ON THE ROBOT (ros2 run go2_real_bridge check_sensors): lidar_xyz / lidar_rpy,
+# ground_z_*, body_box, camera_xyz.
+sar_slam:
+  ros__parameters:
+    expected_victims: 4                  # launch argument expected_victims overrides this
+    time_limit: 300.0                    # [s] from the mission start - set to the competition rule
+    start_after_sim_time: 0.0            # real clock: start as soon as IMU + lidar arrive
+    cloud_topic: /go2/cloud
+    imu_topic: /go2/imu
+    odom_topic: /go2/odom
+    cmd_vel_topic: /sar/cmd_vel
+    body_pose_topic: /sar/body_pose
+    camera_info_topic: /camera/camera/color/camera_info
+    # /utlidar/cloud_base already arrives in base_link, so there is nothing left to
+    # transform -- identity. Only switch these back to the URDF values below if you point
+    # cloud_in at the raw /utlidar/cloud instead; applying them to cloud_base would
+    # transform the cloud twice and break every ground / obstacle height check.
+    #   Go2 URDF (go2_description radar_joint), L1 under the head, upside down:
+    #   lidar_xyz: [0.28945, 0.0, -0.046825]   lidar_rpy: [0.0, 2.8782, 0.0]
+    lidar_xyz: [0.0, 0.0, 0.0]
+    lidar_rpy: [0.0, 0.0, 0.0]
+    lidar_blind_range: 0.6               # [m from the body centre] free space starts here
+    near_guard: 1.0
+    body_box: [-0.5, 0.45, 0.22]         # own body / legs in the L1 view
+    # base_link -> front camera optical centre, from the Go2 URDF chain as read on the
+    # real robot by sar2026_lumenfleet (base_link -> Head_upper -> front_camera).
+    # The organizers' own per-robot D435i calibration adds a few cm on top of this
+    # (their go2_front_camera_optical -> camera_link transform), and the URDF's D435
+    # mount disagrees with it -- so MEASURE this on the robot you are given.
+    camera_xyz: [0.33, 0.0, 0.04]
+    ground_z_init: -0.32                 # base_link is ~0.32 m above the floor when standing
+    ground_z_min: -0.42
+    ground_z_max: -0.22
+    sit_duration: 3.0
+    stand_up_duration: 3.0               # Sit / RiseSit of the real robot take longer than CHAMP

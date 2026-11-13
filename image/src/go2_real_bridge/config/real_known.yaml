@@ -1,0 +1,36 @@
+# Real Go2, mission with a prior map + estimated victims (go2_sar_prior sar_prior).
+# Defaults: sar_navigator_node.py + go2_sar_prior/config/prior_params.yaml. map_yaml / victims_yaml
+# come from the launch argument `mission` (a folder like PhysicalGo2/missions/real_field).
+# The map frame is the start pose: put the robot on the agreed start spot, facing +x.
+# VERIFY ON THE ROBOT: lidar_xyz / lidar_rpy, ground_z_*, body_box, camera_xyz.
+sar_prior:
+  ros__parameters:
+    time_limit: 180.0                    # [s] - set to the competition rule
+    start_after_sim_time: 0.0
+    cloud_topic: /go2/cloud
+    imu_topic: /go2/imu
+    odom_topic: /go2/odom
+    cmd_vel_topic: /sar/cmd_vel
+    body_pose_topic: /sar/body_pose
+    camera_info_topic: /camera/camera/color/camera_info
+    # /utlidar/cloud_base already arrives in base_link, so there is nothing left to
+    # transform -- identity. Only switch these back to the URDF values below if you point
+    # cloud_in at the raw /utlidar/cloud instead; applying them to cloud_base would
+    # transform the cloud twice and break every ground / obstacle height check.
+    #   Go2 URDF (go2_description radar_joint), L1 under the head, upside down:
+    #   lidar_xyz: [0.28945, 0.0, -0.046825]   lidar_rpy: [0.0, 2.8782, 0.0]
+    lidar_xyz: [0.0, 0.0, 0.0]
+    lidar_rpy: [0.0, 0.0, 0.0]
+    body_box: [-0.5, 0.45, 0.22]
+    # base_link -> front camera optical centre, from the Go2 URDF chain as read on the
+    # real robot by sar2026_lumenfleet (base_link -> Head_upper -> front_camera).
+    # The organizers' own per-robot D435i calibration adds a few cm on top of this
+    # (their go2_front_camera_optical -> camera_link transform), and the URDF's D435
+    # mount disagrees with it -- so MEASURE this on the robot you are given.
+    camera_xyz: [0.33, 0.0, 0.04]
+    ground_z_init: -0.32
+    ground_z_min: -0.42
+    ground_z_max: -0.22
+    robot_radius: 0.25
+    sit_duration: 3.0
+    stand_up_duration: 3.0

@@ -14,3 +14,17 @@ teleop_ws/
 **/.pytest_cache/
 AGENTS.md
 CLAUDE.md
+
+# Gazebo meshes and textures: ~100 MB of unmodified Fuel assets, injected at
+# build time from a SMC_SAR_Phase2 checkout. See sim/src/ASSETS.md.
+sim/src/disaster_models/models/
+sim/src/unitree_go2_description/meshes/
+
+# Local working notes -- never pushed. These are the running log of how this
+# workspace got here (handover state, change log, git recipes, what to run
+# next). They name people, branches and credentials-handling steps, and they
+# are written for us, not for the upstream repository.
+ToRun.md
+git.md
+Init.md
+process.md
