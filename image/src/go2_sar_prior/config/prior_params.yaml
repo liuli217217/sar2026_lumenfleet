@@ -1,0 +1,63 @@
+# Parameters for the go2_sar_core map-based search-and-rescue mission.
+# Mission files (map, victims) default to disaster_models/missions/arena_5x8 (training arena).
+
+person_detector:
+  ros__parameters:
+    image_topic: /rgb_image
+    confidence_threshold: 0.25     # YOLO output threshold
+    iou_threshold: 0.45
+    detection_rate_hz: 4.0         # ~150-190 ms per frame on the Jetson CPU
+    num_threads: 4
+    start_enabled: false           # sar_navigator switches YOLO on near a victim
+    enable_topic: /sar/detector_enable
+    publish_debug_image: true      # /sar/person_detections/image
+    save_detections_dir: ''        # e.g. ~/sar_detections: save frames with a person (1/s)
+
+sar_prior:
+  ros__parameters:
+    time_limit: 180.0              # [s, sim time] from the mission start
+    start_after_sim_time: 40.0     # wait until the CHAMP controllers are up
+    # map_yaml / victims_yaml: prior knowledge (default: arena_5x8 mission)
+
+    # Localization (no ground truth): IMU heading + /odom (CHAMP leg odometry),
+    # corrected by matching the lidar scan to the walls of the prior map.
+    odom_topic: /odom
+    map_matching: true
+    icp_gate: 0.25
+    icp_min_inliers: 0.45
+    icp_max_correction: 0.25
+
+    # Planning: A* on the prior map + obstacles seen by the lidar.
+    robot_radius: 0.25             # hard inflation (Go2 is ~0.7 x 0.31 m; 0.30 closes the 0.7 m gaps)
+    obstacle_memory: 180.0         # [s] keep unknown obstacles (the lidar is blind < 0.7 m)
+    obstacle_min_hits: 2           # scans that must see a cell before it counts
+    replan_period: 1.0
+
+    # Motion.
+    max_linear_speed: 0.3          # gait.yaml limit; real speed is ~0.6x the command
+    min_forward_speed: 0.22        # CHAMP walks on the spot below ~0.15 m/s forward
+    max_angular_speed: 0.6
+    lookahead: 0.5
+    stop_distance: 0.45            # emergency stop if something is right ahead
+
+    # Victims.
+    search_radius: 2.0             # YOLO on within this distance of the estimated position
+    association_radius: 1.2        # a detection must be this close to the estimate
+    detection_min_score: 0.35
+    confirm_hits: 3
+    confirm_min_score: 0.4
+    victim_max_height: 0.42        # lidar points of a lying person are below this
+    victim_cluster_radius: 0.45    # measure the victim only near its fix (victims can lie 0.56 m apart)
+    success_distance: 1.0          # task: within 1 m ...
+    sit_distance: 0.75             # ... measured by the lidar, with a margin
+    victim_timeout: 35.0           # [s] give up a victim (and try the next) after this
+    sit_duration: 3.0
+    sit_height_offset: -0.08       # lower the body by 8 cm ...
+    sit_pitch: -0.3                # ... and raise the nose (hips go down)
+
+mission_monitor:
+  ros__parameters:
+    # Uses Gazebo ground truth - never visible to the robot.
+    ground_truth_topic: /odom/ground_truth
+    success_distance: 1.0
+    time_limit: 180.0
