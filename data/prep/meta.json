@@ -1,0 +1,380 @@
+[
+ {
+  "idx": 1,
+  "src": "IMG_20261113_135509.jpg",
+  "out": "white_mecanum_01.jpg",
+  "cls": "white_mecanum",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 2,
+  "src": "IMG_20261113_135512.jpg",
+  "out": "white_mecanum_02.jpg",
+  "cls": "white_mecanum",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 3,
+  "src": "IMG_20261113_135513.jpg",
+  "out": "white_mecanum_03.jpg",
+  "cls": "white_mecanum",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 4,
+  "src": "IMG_20261113_135515.jpg",
+  "out": "white_mecanum_04.jpg",
+  "cls": "white_mecanum",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 5,
+  "src": "IMG_20261113_135517.jpg",
+  "out": "white_mecanum_05.jpg",
+  "cls": "white_mecanum",
+  "orig_size": [
+   4032,
+   3024
+  ],
+  "new_size": [
+   1280,
+   960
+  ]
+ },
+ {
+  "idx": 6,
+  "src": "IMG_20261113_135518.jpg",
+  "out": "white_mecanum_06.jpg",
+  "cls": "white_mecanum",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 7,
+  "src": "IMG_20261113_135522.jpg",
+  "out": "white_mecanum_07.jpg",
+  "cls": "white_mecanum",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 8,
+  "src": "IMG_20261113_135525.jpg",
+  "out": "white_mecanum_08.jpg",
+  "cls": "white_mecanum",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 9,
+  "src": "IMG_20261113_135527.jpg",
+  "out": "white_mecanum_09.jpg",
+  "cls": "white_mecanum",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 10,
+  "src": "IMG_20261113_135541.jpg",
+  "out": "metal_frame_10.jpg",
+  "cls": "metal_frame",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 11,
+  "src": "IMG_20261113_135542.jpg",
+  "out": "metal_frame_11.jpg",
+  "cls": "metal_frame",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 12,
+  "src": "IMG_20261113_135545.jpg",
+  "out": "metal_frame_12.jpg",
+  "cls": "metal_frame",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 13,
+  "src": "IMG_20261113_135555.jpg",
+  "out": "metal_frame_13.jpg",
+  "cls": "metal_frame",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 14,
+  "src": "IMG_20261113_135557.jpg",
+  "out": "metal_frame_14.jpg",
+  "cls": "metal_frame",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 15,
+  "src": "IMG_20261113_135558.jpg",
+  "out": "metal_frame_15.jpg",
+  "cls": "metal_frame",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 16,
+  "src": "IMG_20261113_135606.jpg",
+  "out": "metal_frame_16.jpg",
+  "cls": "metal_frame",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 17,
+  "src": "IMG_20261113_135609.jpg",
+  "out": "metal_frame_17.jpg",
+  "cls": "metal_frame",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 18,
+  "src": "IMG_20261113_135634.jpg",
+  "out": "clear_round_18.jpg",
+  "cls": "clear_round",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 19,
+  "src": "IMG_20261113_135636.jpg",
+  "out": "clear_round_19.jpg",
+  "cls": "clear_round",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 20,
+  "src": "IMG_20261113_135638.jpg",
+  "out": "clear_round_20.jpg",
+  "cls": "clear_round",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 21,
+  "src": "IMG_20261113_135641.jpg",
+  "out": "clear_round_21.jpg",
+  "cls": "clear_round",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 22,
+  "src": "IMG_20261113_135643.jpg",
+  "out": "clear_round_22.jpg",
+  "cls": "clear_round",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 23,
+  "src": "IMG_20261113_135648.jpg",
+  "out": "clear_round_23.jpg",
+  "cls": "clear_round",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 24,
+  "src": "IMG_20261113_135650.jpg",
+  "out": "clear_round_24.jpg",
+  "cls": "clear_round",
+  "orig_size": [
+   3024,
+   4032
+  ],
+  "new_size": [
+   960,
+   1280
+  ]
+ },
+ {
+  "idx": 25,
+  "src": "IMG_20261113_135651.jpg",
+  "out": "clear_round_25.jpg",
+  "cls": "clear_round",
+  "orig_size": [
+   4032,
+   3024
+  ],
+  "new_size": [
+   1280,
+   960
+  ]
+ },
+ {
+  "idx": 26,
+  "src": "IMG_20261113_135652.jpg",
+  "out": "clear_round_26.jpg",
+  "cls": "clear_round",
+  "orig_size": [
+   4032,
+   3024
+  ],
+  "new_size": [
+   1280,
+   960
+  ]
+ },
+ {
+  "idx": 27,
+  "src": "IMG_20261113_135655.jpg",
+  "out": "clear_round_27.jpg",
+  "cls": "clear_round",
+  "orig_size": [
+   4032,
+   3024
+  ],
+  "new_size": [
+   1280,
+   960
+  ]
+ }
+]

@@ -1,0 +1,10 @@
+# SAR 3-robot detection dataset (auto-generated)
+# 'path' is intentionally omitted: Ultralytics then resolves train/val relative to
+# this file's own directory, so the dataset works from any checkout and any cwd.
+train: images/train
+val: images/val
+nc: 3
+names:
+  0: white_mecanum
+  1: metal_frame
+  2: clear_round
