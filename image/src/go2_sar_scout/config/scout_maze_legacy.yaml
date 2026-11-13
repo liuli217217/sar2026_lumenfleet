@@ -1,0 +1,51 @@
+# Legacy: parameters of the reactive explorer (no map; superseded by sar_navigator).
+sar_scout:
+  ros__parameters:
+    target_victims: 4              # victims in disaster_maze_4x4.sdf
+    max_mission_time: 1500.0       # [s, sim time]
+    start_after_sim_time: 40.0     # wait until the CHAMP controllers are up
+
+    # Spawn pose (world frame). sar_mission.launch.py overrides these with its
+    # x / y / yaw arguments so they always match the Gazebo spawn.
+    initial_x: 0.65
+    initial_y: 0.55
+    initial_yaw: 1.5708            # facing north, into the maze
+    # The 4 m x 4 m field: never plan outside it. [0, 0, 0, 0] = no limit.
+    field_bounds: [0.0, 4.0, 0.0, 4.0]
+
+    # Pose: 'dead_reckoning' = IMU heading + commanded velocity, corrected by lidar ICP
+    #       (only IMU/lidar/camera); 'odom' = position from odom_topic
+    #       (/odom = CHAMP leg odometry + EKF).
+    pose_source: dead_reckoning
+    odom_topic: /odom
+    velocity_scale: 0.6            # CHAMP walks slower than commanded
+    scan_matching: true            # lidar ICP position correction
+    scan_matching_min_inliers: 0.5
+    scan_matching_max_correction: 0.3
+
+    # Obstacle avoidance (distances from the robot centre, metres).
+    robot_half_width: 0.28
+    stop_distance: 0.6
+    slow_distance: 1.2
+    min_free_distance: 0.9         # 1.25 m wide maze corridors
+    max_linear_speed: 0.3          # gait.yaml limit; real speed is ~0.6x the command
+    approach_linear_speed: 0.22
+    min_forward_speed: 0.22        # CHAMP walks on the spot below ~0.15 m/s forward
+    max_angular_speed: 0.5
+
+    # Exploration.
+    scan_every_distance: 3.0       # 360 deg camera sweep every 3 m ...
+    scan_every_time: 60.0          # ... or every 60 s
+    weight_visited: 1.2            # reward for heading to unvisited places
+
+    # People.
+    detection_min_score: 0.35      # start approaching
+    confirm_min_score: 0.45        # median score needed to confirm (a fallen chair scored ~0.4)
+    min_hits: 4
+    dedup_radius: 1.0
+    # Success: get within success_distance (1 m) of the victim, then sit down.
+    success_distance: 1.0
+    sit_distance: 0.8              # approach goal, kept below 1 m as a margin
+    sit_duration: 5.0
+    sit_height_offset: -0.08       # lower the body by 8 cm ...
+    sit_pitch: -0.3                # ... and raise the nose (hips go down)
