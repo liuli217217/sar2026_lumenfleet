@@ -1,0 +1,6 @@
+# Rough victim positions (error <= 0.3 m) - known-map baseline only.
+victims:
+  - {name: victim_1, x: 0.21, y: -2.41}
+  - {name: victim_2, x: 7.08, y: -0.66}
+  - {name: victim_3, x: 6.51, y: -2.94}
+  - {name: victim_4, x: 3.28, y: 0.61}
