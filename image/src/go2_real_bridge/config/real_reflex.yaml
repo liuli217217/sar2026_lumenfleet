@@ -1,0 +1,46 @@
+# Real Unitree Go2, A2 Reflex (go2_sar_reflex, node sar_reflex).
+# No map, no SLAM, no planner, no pose estimate -- the fallback for a robot
+# that cannot run mapping.
+#
+# Until 2026-11-13 this file set min_forward_speed and max_lateral_speed and
+# nothing else, so Reflex would have run on the robot with the Gazebo
+# Velodyne's extrinsic, CHAMP's ground height, a 40 s startup idle and a
+# hard-coded 640x480 sim camera model. Worse, this file is loaded in
+# SIMULATION too, and sim_test.yaml had no `sar_reflex:` section to undo it --
+# so every Reflex result measured in Gazebo was actually run at
+# min_forward_speed 0.30, the real-robot value, not the 0.22 that
+# reflex_params.yaml documents for CHAMP.
+#
+# SCOPE: hardware only. Algorithm tuning stays in
+# go2_sar_reflex/config/reflex_params.yaml so that what we tune in simulation
+# is what runs on the robot. Every value here has its simulation counterpart
+# in sim_test.yaml (`sar_reflex:`).
+#
+# VERIFY ON THE ROBOT:
+#   ros2 run go2_real_bridge check_sensors --ros-args --params-file <this file>
+sar_reflex:
+  ros__parameters:
+    start_after_sim_time: 0.0      # real clock: start when IMU + lidar arrive
+
+    # --- camera ---
+    # Reflex rejects candidates on APPARENT SIZE (min_person_extent,
+    # victim_max_bottom, victim_max_top) and every one of those divides by fx.
+    # A wrong focal length here does not merely shift a bearing: it silently
+    # rejects real victims and accepts the wrong objects.
+    camera_info_topic: /camera/camera/color/camera_info
+    camera_hfov: 1.211             # fallback only (D435i colour, ~69 deg)
+    camera_xyz: [0.33, 0.0, 0.04]  # MEASURE: use the organizers' calibration
+
+    # --- lidar ---
+    # /utlidar/cloud_base is already in base_link -- identity. See
+    # real_scout.yaml for the URDF values to restore if you switch to the raw
+    # /utlidar/cloud.
+    lidar_xyz: [0.0, 0.0, 0.0]
+    lidar_rpy: [0.0, 0.0, 0.0]
+    ground_z_init: -0.32
+    ground_z_min: -0.42
+    ground_z_max: -0.22
+
+    # The real Go2 does not walk below 0.30 m/s; 0.22 is a CHAMP value and
+    # would make the robot crawl or twitch here.
+    min_forward_speed: 0.30
